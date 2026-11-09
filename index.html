@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EpiPalace - Immersive Sim Labyrinth</title>
+    <title>EpiPalace - Mapped Labyrinth</title>
     <!-- Tailwind CSS for UI HUD styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Three.js for 3D graphics -->
@@ -25,16 +25,15 @@
     <div id="instruction-screen" class="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-6 z-50 text-white text-center cursor-pointer">
         <div class="hud-panel p-8 rounded-2xl max-w-lg shadow-2xl border-teal-500/50">
             <h1 class="text-3xl font-bold tracking-wider text-teal-300 mb-2">EPI-PALACE</h1>
-            <p class="text-sm text-cyan-200 uppercase tracking-widest mb-6">Immersive Sim Memory Labyrinth</p>
+            <p class="text-sm text-cyan-200 uppercase tracking-widest mb-6">Mapped Architecture Prototype</p>
             <div class="text-sm text-slate-300 space-y-2 mb-6 text-left bg-slate-900/60 p-4 rounded-xl border border-slate-800">
-                <p><strong>W / A / S / D:</strong> Navigate Chambers</p>
+                <p><strong>W / A / S / D:</strong> Navigate Numbered Rooms</p>
                 <p><strong>Mouse:</strong> Look Around</p>
-                <p><strong>Spacebar:</strong> Jump</p>
-                <p><strong>Left Click:</strong> Inspect Locus / Inspect Anchors</p>
-                <p><strong>F Key:</strong> Throw Treatment Projectile (Pill/Syringe)</p>
+                <p><strong>Spacebar:</strong> Jump (or respawn from chasms)</p>
+                <p><strong>F Key:</strong> Throw Treatment Projectile</p>
                 <p><strong>ESC:</strong> Release Mouse Cursor</p>
             </div>
-            <button class="bg-teal-700 hover:bg-teal-600 text-white font-semibold px-6 py-3 rounded-xl transition-colors shadow-lg">ENTER PALACE</button>
+            <button class="bg-teal-700 hover:bg-teal-600 text-white font-semibold px-6 py-3 rounded-xl transition-colors shadow-lg">ENTER MAPPED PALACE</button>
         </div>
     </div>
 
@@ -42,10 +41,10 @@
     <div class="absolute top-0 left-0 w-full p-6 pointer-events-none flex justify-between items-start text-white">
         <div>
             <h1 class="text-xl font-bold tracking-wider text-teal-300">EPI-PALACE</h1>
-            <p id="current-location" class="text-xs text-cyan-200 uppercase tracking-widest mt-1">Zone: Entrance Foyer & Diagnostics</p>
+            <p id="current-location" class="text-xs text-cyan-200 uppercase tracking-widest mt-1">Zone: Room 1 (Entrance Foyer)</p>
         </div>
         
-        <!-- Center-Right Persistent Controls Reminder Badge -->
+        <!-- Controls Guide Badge -->
         <div class="hud-panel px-4 py-3 rounded-xl pointer-events-auto shadow-xl text-xs space-y-1 text-slate-200 border-teal-500/40">
             <p class="font-semibold text-amber-300 mb-1 border-b border-slate-700 pb-1">Controls Guide</p>
             <div class="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
@@ -82,7 +81,7 @@
         const container = document.getElementById('canvas-container');
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x0b131e);
-        scene.fog = new THREE.FogExp2(0x0b131e, 0.035);
+        scene.fog = new THREE.FogExp2(0x0b131e, 0.030);
 
         const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.set(0, 1.6, 8);
@@ -93,20 +92,21 @@
         container.appendChild(renderer.domElement);
 
         // Lighting
-        const ambientLight = new THREE.AmbientLight(0x17324D, 1.2);
+        const ambientLight = new THREE.AmbientLight(0x17324D, 1.3);
         scene.add(ambientLight);
 
-        const pointLight = new THREE.PointLight(0x287F83, 2, 25);
-        pointLight.position.set(0, 4, 0);
+        const pointLight = new THREE.PointLight(0x287F83, 2, 30);
+        pointLight.position.set(0, 5, 0);
         scene.add(pointLight);
 
-        // --- ENVIRONMENT ARCHITECTURE ---
+        // --- MAPPED ARCHITECTURE (Numbered Zones) ---
         const structureGroup = new THREE.Group();
         scene.add(structureGroup);
 
         const wallMat = new THREE.MeshStandardMaterial({ color: 0x17324D, roughness: 0.9 });
         const floorMat = new THREE.MeshStandardMaterial({ color: 0x102A43, roughness: 0.8 });
         const grottoMat = new THREE.MeshStandardMaterial({ color: 0x0f2b38, roughness: 0.95 });
+        const pillarMat = new THREE.MeshStandardMaterial({ color: 0x1e3a5f, roughness: 0.6 });
 
         function createBox(w, h, d, x, y, z, mat) {
             const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -115,16 +115,46 @@
             return mesh;
         }
 
-        // Entrance Foyer & Wings
-        createBox(10, 4, 15, 0, 2, 0, floorMat);
-        createBox(0.5, 4, 15, -5, 2, 0, wallMat);
-        createBox(0.5, 4, 15, 5, 2, 0, wallMat);
-        createBox(12, 4, 6, -11, 2, -6, grottoMat);
-        createBox(6, 4, 12, -17, 2, -10, grottoMat);
-        createBox(12, 4, 6, 11, 2, -6, grottoMat);
-        createBox(6, 4, 12, 17, 2, -10, grottoMat);
+        // --- ROOM 1: Entrance Foyer ---
+        createBox(10, 4, 14, 0, 2, 0, floorMat);
+        createBox(0.5, 4, 14, -5, 2, 0, wallMat);
+        createBox(0.5, 4, 14, 5, 2, 0, wallMat);
 
-        // --- INTERACTIVE LOCI & INVENTORY ITEMS ---
+        // --- ROOM 2: Hypostyle Pillar Hall ---
+        createBox(16, 5, 16, 0, 2.5, -20, floorMat);
+        createBox(0.5, 5, 16, -8, 2.5, -20, wallMat);
+        createBox(0.5, 5, 16, 8, 2.5, -20, wallMat);
+        // Pillar Forest Grid inside Room 2
+        for(let px = -5; px <= 5; px += 5) {
+            for(let pz = -15; pz >= -25; pz -= 5) {
+                createBox(1.2, 5, 1.2, px, 2.5, pz, pillarMat);
+            }
+        }
+
+        // --- ROOM 3: Curved Rotunda ---
+        const rotundaGeo = new THREE.CylinderGeometry(6, 6, 4, 16, 1, true);
+        const rotundaMat = new THREE.MeshStandardMaterial({ color: 0x132e48, roughness: 0.8, side: THREE.DoubleSide });
+        const rotunda = new THREE.Mesh(rotundaGeo, rotundaMat);
+        rotunda.position.set(0, 2, -38);
+        structureGroup.add(rotunda);
+        // Rotunda floor
+        const rotFloor = new THREE.Mesh(new THREE.CircleGeometry(6, 16), floorMat);
+        rotFloor.rotation.x = -Math.PI / 2;
+        rotFloor.position.set(0, 0, -38);
+        structureGroup.add(rotFloor);
+
+        // --- ROOM 4: Sunken Chasm & Grotto Wing (Left) ---
+        createBox(14, 4, 10, -17, 2, -4, grottoMat);
+        // Inaccessible Chasm pit in Room 4 (no floor mesh here, triggers respawn)
+        const chasmVisual = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), new THREE.MeshBasicMaterial({ color: 0x020617 }));
+        chasmVisual.rotation.x = -Math.PI / 2;
+        chasmVisual.position.set(-17, 0.01, -4);
+        structureGroup.add(chasmVisual);
+
+        // --- ROOM 5: Clockwork Tower Wing (Right) ---
+        createBox(14, 6, 10, 17, 3, -4, wallMat);
+
+        // --- INTERACTIVE LOCI & ITEMS ---
         const interactiveObjects = [];
         const collectibles = [];
         const projectiles = [];
@@ -148,11 +178,13 @@
             return mesh;
         }
 
-        createLocus(0, 1, -4, "True Positive / False Positive (2x2 Core)", "Wing A: Diagnostics", "Anchored at the entrance guardrails separating disease status.");
-        createLocus(-11, 1, -6, "Cumulative Incidence (Risk)", "Wing B: Sunken Grotto", "Static portrait mounted on the damp cavern wall.");
-        createLocus(11, 1, -6, "Incidence Rate (Density)", "Wing C: Clockwork Tower", "Ticking grandfather clock measuring person-time exposure.");
+        // Loci placed across numbered rooms
+        createLocus(0, 1, -4, "True Positive / False Positive (2x2 Core)", "Room 1: Entrance Foyer", "Anchored at the entrance guardrails.");
+        createLocus(0, 1, -20, "Relative Risk & Odds Ratio", "Room 2: Hypostyle Pillar Hall", "Anchored to the central massive stone columns.");
+        createLocus(0, 1, -38, "Survival Curve / Kaplan-Meier", "Room 3: Curved Rotunda", "Anchored along the smooth circular perimeter wall.");
+        createLocus(-17, 1, -4, "Incidence Density Rate", "Room 4: Sunken Grotto", "Mounted across the chasm gap.");
+        createLocus(17, 1, -4, "Confounding & Effect Modification", "Room 5: Clockwork Tower Wing", "Mounted on the towering vertical wall.");
 
-        // Spawn collectible pill and syringe items in the world
         function spawnCollectible(x, y, z, type) {
             const geo = type === 'pill' ? new THREE.CylinderGeometry(0.3, 0.3, 0.6, 8) : new THREE.ConeGeometry(0.2, 0.8, 8);
             const mat = new THREE.MeshStandardMaterial({ color: type === 'pill' ? 0x38BDF8 : 0xF43F5E, emissive: 0x102A43 });
@@ -163,8 +195,19 @@
             collectibles.push(mesh);
         }
 
-        spawnCollectible(-15, 1, -8, 'pill');
-        spawnCollectible(15, 1, -8, 'syringe');
+        spawnCollectible(-12, 1, -4, 'pill');
+        spawnCollectible(12, 1, -4, 'syringe');
+
+        // --- ZONE TRACKER FOR HUD ---
+        function updateZoneTracker(x, z) {
+            let zoneName = "Room 1: Entrance Foyer";
+            if (z < -10 && z >= -28 && x >= -8 && x <= 8) zoneName = "Room 2: Hypostyle Pillar Hall";
+            else if (z < -28) zoneName = "Room 3: Curved Rotunda";
+            else if (x < -8) zoneName = "Room 4: Sunken Grotto & Chasm";
+            else if (x > 8) zoneName = "Room 5: Clockwork Tower Wing";
+            
+            document.getElementById('current-location').innerText = `Zone: ${zoneName}`;
+        }
 
         // --- CONTROLS & PHYSICS ---
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
@@ -200,9 +243,7 @@
         });
 
         document.addEventListener('keydown', (e) => {
-            if (e.code === 'Escape') {
-                document.exitPointerLock();
-            }
+            if (e.code === 'Escape') document.exitPointerLock();
             if (e.code === 'KeyW' || e.code === 'ArrowUp') moveForward = true;
             if (e.code === 'KeyS' || e.code === 'ArrowDown') moveBackward = true;
             if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveLeft = true;
@@ -211,11 +252,10 @@
                 velocityY = jumpForce;
                 isGrounded = false;
             }
-            // Throw treatment projectile on 'KeyF'
             if (e.code === 'KeyF' && inventory.pills > 0 && document.pointerLockElement === container) {
                 inventory.pills--;
                 updateHUD();
-                throwProjectile('pill');
+                throwProjectile();
             }
         });
 
@@ -226,20 +266,14 @@
             if (e.code === 'KeyD' || e.code === 'ArrowRight') moveRight = false;
         });
 
-        function throwProjectile(type) {
+        function throwProjectile() {
             const geo = new THREE.SphereGeometry(0.2, 8, 8);
             const mat = new THREE.MeshStandardMaterial({ color: 0x38BDF8, emissive: 0x0284C7 });
             const mesh = new THREE.Mesh(geo, mat);
-            
             mesh.position.copy(camera.position);
             const dir = new THREE.Vector3();
             camera.getWorldDirection(dir);
-            
-            projectiles.push({
-                mesh: mesh,
-                velocity: dir.multiplyScalar(0.4),
-                life: 150
-            });
+            projectiles.push({ mesh: mesh, velocity: dir.multiplyScalar(0.4), life: 150 });
             scene.add(mesh);
         }
 
@@ -247,7 +281,6 @@
         const raycaster = new THREE.Raycaster();
         window.addEventListener('click', (event) => {
             if (document.pointerLockElement !== container) return;
-            
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             const intersects = raycaster.intersectObjects(interactiveObjects);
 
@@ -256,7 +289,7 @@
                 if (camera.position.distanceTo(obj.position) < 6) {
                     if (!obj.userData.discovered) {
                         obj.userData.discovered = true;
-                        obj.material.color.setHex(0xF50E0B);
+                        obj.material.color.setHex(0xF59E0B);
                         discoveredCount++;
                         updateHUD();
                     }
@@ -285,7 +318,6 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            // Movement
             const dir = new THREE.Vector3();
             camera.getWorldDirection(dir);
             dir.y = 0;
@@ -310,10 +342,13 @@
                 isGrounded = true;
             }
 
-            camera.position.x = Math.max(-22, Math.min(22, camera.position.x));
-            camera.position.z = Math.max(-18, Math.min(8, camera.position.z));
+            // Chasm Void-Loop Check (Room 4 pit respawn)
+            if (Math.abs(camera.position.x - (-17)) < 2 && Math.abs(camera.position.z - (-4)) < 2 && camera.position.y <= 1.6) {
+                camera.position.set(0, 1.6, 6); // Respawn back at Room 1 entrance
+            }
 
-            // Check collection proximity
+            updateZoneTracker(camera.position.x, camera.position.z);
+
             collectibles.forEach((item, index) => {
                 if (camera.position.distanceTo(item.position) < 1.5) {
                     if (item.userData.type === 'pill') inventory.pills++;
@@ -324,7 +359,6 @@
                 }
             });
 
-            // Update Projectiles
             projectiles.forEach((p, index) => {
                 p.mesh.position.add(p.velocity);
                 p.life--;
