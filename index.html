@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EpiPalace - First-Person Labyrinth</title>
+    <title>EpiPalace - Immersive Sim Labyrinth</title>
     <!-- Tailwind CSS for UI HUD styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Three.js for 3D graphics -->
@@ -21,16 +21,18 @@
     <div id="canvas-container"></div>
     <div id="crosshair"></div>
 
-    <!-- Instructions Overlay (Click to Lock Mouse) -->
+    <!-- Instructions Overlay -->
     <div id="instruction-screen" class="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-6 z-50 text-white text-center cursor-pointer">
         <div class="hud-panel p-8 rounded-2xl max-w-lg shadow-2xl border-teal-500/50">
             <h1 class="text-3xl font-bold tracking-wider text-teal-300 mb-2">EPI-PALACE</h1>
-            <p class="text-sm text-cyan-200 uppercase tracking-widest mb-6">First-Person Exploratory Labyrinth</p>
+            <p class="text-sm text-cyan-200 uppercase tracking-widest mb-6">Immersive Sim Memory Labyrinth</p>
             <div class="text-sm text-slate-300 space-y-2 mb-6 text-left bg-slate-900/60 p-4 rounded-xl border border-slate-800">
-                <p><strong>W / A / S / D or Arrows:</strong> Move through chambers</p>
-                <p><strong>Mouse:</strong> Look around / aim</p>
+                <p><strong>W / A / S / D:</strong> Navigate Chambers</p>
+                <p><strong>Mouse:</strong> Look Around</p>
                 <p><strong>Spacebar:</strong> Jump</p>
-                <p><strong>Left Click:</strong> Inspect formula loci</p>
+                <p><strong>Left Click:</strong> Inspect Locus / Inspect Anchors</p>
+                <p><strong>F Key:</strong> Throw Treatment Projectile (Pill/Syringe)</p>
+                <p><strong>ESC:</strong> Release Mouse Cursor</p>
             </div>
             <button class="bg-teal-700 hover:bg-teal-600 text-white font-semibold px-6 py-3 rounded-xl transition-colors shadow-lg">ENTER PALACE</button>
         </div>
@@ -42,8 +44,22 @@
             <h1 class="text-xl font-bold tracking-wider text-teal-300">EPI-PALACE</h1>
             <p id="current-location" class="text-xs text-cyan-200 uppercase tracking-widest mt-1">Zone: Entrance Foyer & Diagnostics</p>
         </div>
-        <div class="hud-panel p-3 rounded-xl pointer-events-auto shadow-xl max-w-xs text-right">
-            <p class="text-xs text-amber-300 font-semibold">Active Loci Discovered: <span id="loci-count">0</span> / 30</p>
+        
+        <!-- Center-Right Persistent Controls Reminder Badge -->
+        <div class="hud-panel px-4 py-3 rounded-xl pointer-events-auto shadow-xl text-xs space-y-1 text-slate-200 border-teal-500/40">
+            <p class="font-semibold text-amber-300 mb-1 border-b border-slate-700 pb-1">Controls Guide</p>
+            <div class="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
+                <span class="text-teal-300 font-mono">WASD</span><span>Move</span>
+                <span class="text-teal-300 font-mono">SPACE</span><span>Jump</span>
+                <span class="text-teal-300 font-mono">F</span><span>Throw Item</span>
+                <span class="text-teal-300 font-mono">ESC</span><span>Free Cursor</span>
+            </div>
+        </div>
+
+        <div class="hud-panel p-4 rounded-xl pointer-events-auto shadow-xl space-y-1 text-right min-w-[160px]">
+            <p class="text-xs text-amber-300 font-semibold">Loci Unlocked: <span id="loci-count">0</span> / 30</p>
+            <p class="text-xs text-cyan-300 font-semibold">Pills Inventory: <span id="pills-count">2</span></p>
+            <p class="text-xs text-teal-300 font-semibold">Syringes Inventory: <span id="syringes-count">1</span></p>
         </div>
     </div>
 
@@ -84,7 +100,7 @@
         pointLight.position.set(0, 4, 0);
         scene.add(pointLight);
 
-        // --- ENVIRONMENT ARCHITECTURE (Multi-Room Labyrinth Layout) ---
+        // --- ENVIRONMENT ARCHITECTURE ---
         const structureGroup = new THREE.Group();
         scene.add(structureGroup);
 
@@ -92,7 +108,6 @@
         const floorMat = new THREE.MeshStandardMaterial({ color: 0x102A43, roughness: 0.8 });
         const grottoMat = new THREE.MeshStandardMaterial({ color: 0x0f2b38, roughness: 0.95 });
 
-        // Helper to build rooms/corridors
         function createBox(w, h, d, x, y, z, mat) {
             const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
             mesh.position.set(x, y, z);
@@ -100,22 +115,27 @@
             return mesh;
         }
 
-        // Entrance Foyer
-        createBox(10, 4, 15, 0, 2, 0, floorMat); // Floor
-        createBox(0.5, 4, 15, -5, 2, 0, wallMat); // Left wall
-        createBox(0.5, 4, 15, 5, 2, 0, wallMat); // Right wall
-
-        // Left Wing Branch (Connecting to Node 8-12 area)
+        // Entrance Foyer & Wings
+        createBox(10, 4, 15, 0, 2, 0, floorMat);
+        createBox(0.5, 4, 15, -5, 2, 0, wallMat);
+        createBox(0.5, 4, 15, 5, 2, 0, wallMat);
         createBox(12, 4, 6, -11, 2, -6, grottoMat);
         createBox(6, 4, 12, -17, 2, -10, grottoMat);
-
-        // Right Wing Branch (Connecting to Grotto cluster)
         createBox(12, 4, 6, 11, 2, -6, grottoMat);
         createBox(6, 4, 12, 17, 2, -10, grottoMat);
 
-        // --- INTERACTIVE LOCI (Mnemonic Anchors) ---
+        // --- INTERACTIVE LOCI & INVENTORY ITEMS ---
         const interactiveObjects = [];
+        const collectibles = [];
+        const projectiles = [];
         let discoveredCount = 0;
+        let inventory = { pills: 2, syringes: 1 };
+
+        function updateHUD() {
+            document.getElementById('loci-count').innerText = discoveredCount;
+            document.getElementById('pills-count').innerText = inventory.pills;
+            document.getElementById('syringes-count').innerText = inventory.syringes;
+        }
 
         function createLocus(x, y, z, title, category, desc, color=0x287F83) {
             const geo = new THREE.BoxGeometry(1, 1, 1);
@@ -128,12 +148,25 @@
             return mesh;
         }
 
-        // Place initial sample loci matching sketches
         createLocus(0, 1, -4, "True Positive / False Positive (2x2 Core)", "Wing A: Diagnostics", "Anchored at the entrance guardrails separating disease status.");
-        createLocus(-11, 1, -6, "Cumulative Incidence (Risk)", "Wing B: Sunken Grotto", "Static day-zero portrait mounted on the damp cavern wall.");
+        createLocus(-11, 1, -6, "Cumulative Incidence (Risk)", "Wing B: Sunken Grotto", "Static portrait mounted on the damp cavern wall.");
         createLocus(11, 1, -6, "Incidence Rate (Density)", "Wing C: Clockwork Tower", "Ticking grandfather clock measuring person-time exposure.");
 
-        // --- FIRST-PERSON MOVEMENT CONTROLS ---
+        // Spawn collectible pill and syringe items in the world
+        function spawnCollectible(x, y, z, type) {
+            const geo = type === 'pill' ? new THREE.CylinderGeometry(0.3, 0.3, 0.6, 8) : new THREE.ConeGeometry(0.2, 0.8, 8);
+            const mat = new THREE.MeshStandardMaterial({ color: type === 'pill' ? 0x38BDF8 : 0xF43F5E, emissive: 0x102A43 });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, y, z);
+            mesh.userData = { type: type };
+            scene.add(mesh);
+            collectibles.push(mesh);
+        }
+
+        spawnCollectible(-15, 1, -8, 'pill');
+        spawnCollectible(15, 1, -8, 'syringe');
+
+        // --- CONTROLS & PHYSICS ---
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
         let velocityY = 0;
         let isGrounded = true;
@@ -160,16 +193,16 @@
 
         document.addEventListener('mousemove', (event) => {
             if (document.pointerLockElement !== container) return;
-            const movementX = event.movementX || event.mozMovementX || 0;
-            const movementY = event.movementY || event.mozMovementY || 0;
-
-            euler.y -= movementX * 0.002;
-            euler.x -= movementY * 0.002;
+            euler.y -= event.movementX * 0.002;
+            euler.x -= event.movementY * 0.002;
             euler.x = Math.max(-PI_2, Math.min(PI_2, euler.x));
             camera.quaternion.setFromEuler(euler);
         });
 
         document.addEventListener('keydown', (e) => {
+            if (e.code === 'Escape') {
+                document.exitPointerLock();
+            }
             if (e.code === 'KeyW' || e.code === 'ArrowUp') moveForward = true;
             if (e.code === 'KeyS' || e.code === 'ArrowDown') moveBackward = true;
             if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveLeft = true;
@@ -177,6 +210,12 @@
             if (e.code === 'Space' && isGrounded) {
                 velocityY = jumpForce;
                 isGrounded = false;
+            }
+            // Throw treatment projectile on 'KeyF'
+            if (e.code === 'KeyF' && inventory.pills > 0 && document.pointerLockElement === container) {
+                inventory.pills--;
+                updateHUD();
+                throwProjectile('pill');
             }
         });
 
@@ -186,6 +225,23 @@
             if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveLeft = false;
             if (e.code === 'KeyD' || e.code === 'ArrowRight') moveRight = false;
         });
+
+        function throwProjectile(type) {
+            const geo = new THREE.SphereGeometry(0.2, 8, 8);
+            const mat = new THREE.MeshStandardMaterial({ color: 0x38BDF8, emissive: 0x0284C7 });
+            const mesh = new THREE.Mesh(geo, mat);
+            
+            mesh.position.copy(camera.position);
+            const dir = new THREE.Vector3();
+            camera.getWorldDirection(dir);
+            
+            projectiles.push({
+                mesh: mesh,
+                velocity: dir.multiplyScalar(0.4),
+                life: 150
+            });
+            scene.add(mesh);
+        }
 
         // --- RAYCASTING & INTERACTION ---
         const raycaster = new THREE.Raycaster();
@@ -200,9 +256,9 @@
                 if (camera.position.distanceTo(obj.position) < 6) {
                     if (!obj.userData.discovered) {
                         obj.userData.discovered = true;
-                        obj.material.color.setHex(0xF59E0B); // Turn gold when discovered
+                        obj.material.color.setHex(0xF50E0B);
                         discoveredCount++;
-                        document.getElementById('loci-count').innerText = discoveredCount;
+                        updateHUD();
                     }
                     showModal(obj.userData.title, obj.userData.category, obj.userData.desc);
                 }
@@ -229,12 +285,11 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            // Movement calculations
+            // Movement
             const dir = new THREE.Vector3();
             camera.getWorldDirection(dir);
             dir.y = 0;
             dir.normalize();
-
             const sideDir = new THREE.Vector3(-dir.z, 0, dir.x);
 
             let moveX = 0, moveZ = 0;
@@ -246,7 +301,6 @@
             camera.position.x += moveX;
             camera.position.z += moveZ;
 
-            // Simple gravity & jumping physics
             camera.position.y += velocityY;
             if (camera.position.y > 1.6) {
                 velocityY -= gravity;
@@ -256,11 +310,30 @@
                 isGrounded = true;
             }
 
-            // Boundary clamping to keep player inside the labyrinth structure
             camera.position.x = Math.max(-22, Math.min(22, camera.position.x));
             camera.position.z = Math.max(-18, Math.min(8, camera.position.z));
 
-            // Floating animation for undiscovered loci
+            // Check collection proximity
+            collectibles.forEach((item, index) => {
+                if (camera.position.distanceTo(item.position) < 1.5) {
+                    if (item.userData.type === 'pill') inventory.pills++;
+                    else inventory.syringes++;
+                    updateHUD();
+                    scene.remove(item);
+                    collectibles.splice(index, 1);
+                }
+            });
+
+            // Update Projectiles
+            projectiles.forEach((p, index) => {
+                p.mesh.position.add(p.velocity);
+                p.life--;
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    projectiles.splice(index, 1);
+                }
+            });
+
             let elapsedTime = clock.getElapsedTime();
             interactiveObjects.forEach((obj, idx) => {
                 if (!obj.userData.discovered) {
