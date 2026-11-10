@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EpiPalace Map Editor</title>
+  </head>
+  <body>
+    <div id="editor">
+      <header class="topbar">
+        <div class="brand">EpiPalace <span>Map Editor</span></div>
+        <div class="group">
+          <button data-action="open" title="Open a palace.js file from your computer">Open file…</button>
+          <button data-action="download" class="primary" title="Save the level as palace.js to your computer">Download palace.js</button>
+          <button data-action="site" title="Throw away this draft and start from the level currently on the website">Load site version</button>
+          <button data-action="blank" title="Start an empty level">New blank</button>
+        </div>
+        <div class="group">
+          <button data-action="undo" title="Undo (Ctrl+Z)">↶ Undo</button>
+          <button data-action="redo" title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
+        </div>
+        <div class="group">
+          <button data-action="preview" class="go" title="Walk around this level in first person (opens a new tab)">▶ Preview</button>
+          <button data-action="help" title="How to use the editor and publish your changes">? Help</button>
+        </div>
+        <div class="saved" id="saved"></div>
+      </header>
+
+      <nav class="tools" id="tools"></nav>
+
+      <main class="stage">
+        <canvas id="map"></canvas>
+        <div class="hint" id="hint"></div>
+        <div class="zoom">
+          <button data-action="zoom-in" title="Zoom in (mouse wheel)">+</button>
+          <button data-action="zoom-out" title="Zoom out (mouse wheel)">−</button>
+          <button data-action="fit" title="Show the whole palace">Fit</button>
+          <label title="Objects snap to this grid">Snap
+            <select id="snap"><option value="0.25">0.25 m</option><option value="0.5" selected>0.5 m</option><option value="1">1 m</option></select>
+          </label>
+        </div>
+        <div class="status" id="status"></div>
+      </main>
+
+      <aside class="panel">
+        <section id="props"></section>
+        <section id="problems"></section>
+      </aside>
+    </div>
+
+    <dialog id="help">
+      <h2>How to use the map editor</h2>
+      <ol>
+        <li><b>Pick a tool</b> on the left (or press its key), then click or drag on the grid. North is up.</li>
+        <li><b>Select</b> (V): click anything to select it. Drag to move it; drag the white squares to resize. Moving a room moves everything inside it. Drag empty space to pan; scroll to zoom.</li>
+        <li><b>Change numbers</b> (heights, sizes, names) in the panel on the right.</li>
+        <li><b>Doors</b>: rooms must touch. Pick the Door tool and click on the wall the two rooms share.</li>
+        <li><b>Stairs and ramps</b>: drag from the <i>bottom</i> to the <i>top</i>. Set the top height in the panel.</li>
+        <li><b>▶ Preview</b> walks through your level in a new tab. Select a room first to start inside it.</li>
+        <li>Your work is <b>saved automatically in this browser</b>. To keep a copy, use <b>Download palace.js</b>.</li>
+      </ol>
+      <h2>Put your level on epipalace.com</h2>
+      <ol>
+        <li>Click <b>Download palace.js</b>. The file goes to your Downloads folder.</li>
+        <li>On GitHub, open the repository <b>epipalace</b>, then the folders <b>src</b> → <b>level</b>.</li>
+        <li>Click <b>Add file</b> → <b>Upload files</b>, and drag in the downloaded <b>palace.js</b>. It must keep exactly that name.</li>
+        <li>Below the upload box, choose <b>Create a new branch</b>, then click <b>Propose changes</b>, then <b>Create pull request</b>.</li>
+        <li>Wait for the checks to turn green. Netlify runs the collision tests on your level. Then click <b>Merge pull request</b>.</li>
+      </ol>
+      <p>Or just send the downloaded file to Claude and ask for it to be published.</p>
+      <form method="dialog"><button class="primary">Close</button></form>
+    </dialog>
+    <input type="file" id="file" accept=".js,.json,text/javascript,application/json" hidden />
+    <script type="module" src="/src/editor/main.js"></script>
+  </body>
+</html>

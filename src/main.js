@@ -3,6 +3,7 @@ import './style.css';
 import palace from './level/palace.js';
 import { buildLevel } from './level/build.js';
 import { createGame } from './core/game.js';
+import { PLAYER, playerOverlaps } from './core/physics.js';
 import { createScene } from './render/scene.js';
 import { createDesktopInput } from './input/desktop.js';
 import { createTouchInput } from './input/touch.js';
@@ -11,15 +12,69 @@ import { createMap } from './ui/map.js';
 const app = document.getElementById('app');
 const params = new URLSearchParams(location.search);
 const AUTOTEST = params.has('autotest'); // used by the automated browser test: skips the start screen
+const PREVIEW = params.has('preview'); // opened from the map editor's Preview button
+
+// In preview mode, play the level the editor stored in this browser instead of the published one.
+let levelData = palace;
+let previewRoom = null;
+if (PREVIEW) {
+  try {
+    const stored = JSON.parse(localStorage.getItem('epipalace.preview'));
+    if (stored?.level) levelData = stored.level;
+    previewRoom = Number(params.get('room')) || null;
+  } catch {
+    /* fall back to the published level */
+  }
+}
 
 let level;
 try {
-  level = buildLevel(palace);
+  level = buildLevel(levelData);
 } catch (err) {
   // Show level-file mistakes on screen instead of a blank page.
-  app.innerHTML = `<div class="level-error"><h1>Level file problem</h1><pre></pre></div>`;
+  app.innerHTML = `<div class="level-error"><h1>Level file problem</h1><p>Fix these in the map editor (red items under "Problems"), then preview again.</p><pre></pre></div>`;
   app.querySelector('pre').textContent = err.message;
   throw err;
+}
+
+// "Preview from Room N": start in that room, on a free spot as close to its centre as possible.
+if (previewRoom) {
+  const room = level.rooms.find((r) => r.id === previewRoom);
+  if (room) {
+    const spot = freeSpotIn(room);
+    if (spot) Object.assign(level.spawn, spot);
+  }
+}
+function freeSpotIn(room) {
+  const cx = room.x + room.w / 2;
+  const cz = room.z + room.d / 2;
+  const t = level.settings.wallThickness / 2 + PLAYER.radius + 0.05;
+  const candidates = [];
+  for (let x = room.x + t; x <= room.x + room.w - t; x += 0.25) {
+    for (let z = room.z + t; z <= room.z + room.d - t; z += 0.25) candidates.push({ x, z, dist: Math.hypot(x - cx, z - cz) });
+  }
+  candidates.sort((a, b) => a.dist - b.dist);
+  for (const c of candidates) {
+    if (level.chasms.some((ch) => c.x > ch.x - 0.6 && c.x < ch.x + ch.w + 0.6 && c.z > ch.z - 0.6 && c.z < ch.z + ch.d + 0.6)) continue;
+    const y = level.groundAt(c.x, c.z);
+    if (!level.boxes.some((b) => playerOverlaps(c.x, y, c.z, b))) return { x: c.x, z: c.z, y, yaw: openestYaw(c.x, y, c.z) };
+  }
+  return null;
+}
+// Face whichever of north/east/south/west has the most open floor ahead.
+function openestYaw(x, y, z) {
+  let best = { yaw: 0, dist: -1 };
+  for (const [yaw, dx, dz] of [
+    [0, 0, -1],
+    [-Math.PI / 2, 1, 0],
+    [Math.PI, 0, 1],
+    [Math.PI / 2, -1, 0],
+  ]) {
+    let d = 0;
+    while (d < 20 && !level.boxes.some((b) => playerOverlaps(x + dx * (d + 0.25), y + 0.4, z + dz * (d + 0.25), b))) d += 0.25;
+    if (d > best.dist) best = { yaw, dist: d };
+  }
+  return best.yaw;
 }
 
 const game = createGame(level);
@@ -67,7 +122,7 @@ overlay.className = 'overlay';
 overlay.innerHTML = `
   <div class="panel">
     <h1>EpiPalace</h1>
-    <p class="sub">Foundation build: placeholder layout</p>
+    <p class="sub">${PREVIEW ? 'Editor preview: this level is not published yet' : 'Placeholder layout'}</p>
     <div class="controls desktop-only">
       <p><b>W A S D</b> or arrows: move &nbsp;·&nbsp; <b>Shift</b>: run</p>
       <p><b>Mouse</b>: look &nbsp;·&nbsp; <b>Space</b>: jump</p>
@@ -79,6 +134,7 @@ overlay.innerHTML = `
       <p><b>Jump</b> and <b>Map</b> buttons on screen</p>
     </div>
     <button type="button" class="start">Click to enter</button>
+    <p class="editor-link"><a href="/editor/">Open the map editor</a></p>
   </div>`;
 app.appendChild(overlay);
 const startBtn = overlay.querySelector('.start');

@@ -96,3 +96,5 @@ html, body {
 
 .level-error { padding: 24px; color: #8b0000; font-family: system-ui, sans-serif; }
 .level-error pre { white-space: pre-wrap; background: #fff3f3; padding: 12px; border-radius: 8px; }
+.editor-link { margin: 14px 0 0; font-size: 13px; }
+.editor-link a { color: var(--ink); opacity: 0.75; }
