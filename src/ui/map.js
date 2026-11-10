@@ -75,10 +75,46 @@ export function createMap(root, level) {
       g.fill();
     }
 
-    // Walls (from collision boxes)
+    // Stairs and ramps: lighter strips, step lines, arrow pointing up-hill
+    for (const st of [...level.stairs, ...level.ramps]) {
+      g.fillStyle = 'rgba(255,255,255,0.55)';
+      g.fillRect(X(st.x), Z(st.z), st.w * s, st.d * s);
+      const ns = st.up === 'north' || st.up === 'south';
+      const n = st.steps || 0;
+      g.strokeStyle = 'rgba(27,38,59,0.6)';
+      g.lineWidth = 1;
+      g.beginPath();
+      for (let i = 1; i < n; i++) {
+        if (ns) {
+          const zz = st.z + (i * st.d) / n;
+          g.moveTo(X(st.x), Z(zz));
+          g.lineTo(X(st.x + st.w), Z(zz));
+        } else {
+          const xx = st.x + (i * st.w) / n;
+          g.moveTo(X(xx), Z(st.z));
+          g.lineTo(X(xx), Z(st.z + st.d));
+        }
+      }
+      g.stroke();
+      const cx = X(st.x + st.w / 2);
+      const cz = Z(st.z + st.d / 2);
+      const [ax, az] = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] }[st.up];
+      const L = Math.min(st.w, st.d, 3) * s * 0.4;
+      g.strokeStyle = '#1b263b';
+      g.lineWidth = Math.max(1.5, s * 0.12);
+      g.beginPath();
+      g.moveTo(cx - ax * L, cz - az * L);
+      g.lineTo(cx + ax * L, cz + az * L);
+      g.lineTo(cx + ax * L * 0.4 - az * L * 0.5, cz + az * L * 0.4 + ax * L * 0.5);
+      g.moveTo(cx + ax * L, cz + az * L);
+      g.lineTo(cx + ax * L * 0.4 + az * L * 0.5, cz + az * L * 0.4 - ax * L * 0.5);
+      g.stroke();
+    }
+
+    // Walls, curved-wall posts and pillars (from collision boxes)
     g.fillStyle = '#1b263b';
     for (const bx of level.boxes) {
-      if (bx.kind !== 'wall') continue;
+      if (bx.kind !== 'wall' && bx.kind !== 'curve' && bx.kind !== 'pillar') continue;
       g.fillRect(X(bx.min[0]), Z(bx.min[2]), (bx.max[0] - bx.min[0]) * s, (bx.max[2] - bx.min[2]) * s);
     }
 

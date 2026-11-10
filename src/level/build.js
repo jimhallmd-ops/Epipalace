@@ -10,9 +10,13 @@
 // above the ground and kind is one of:
 //   'floor' | 'ceiling' | 'wall' | 'lintel' (wall above a door) | 'sill' (under a door)
 //   'pit-wall' | 'pit-floor' (inside chasms) | 'item' (pedestal)
+//   'stair' (one step) | 'ramp-step' (invisible small steps under a sloped ramp surface)
+//   'curve' (one short piece of a curved wall) | 'pillar'
+// Ramps, curved walls and round pillars are DRAWN smoothly from level.ramps / level.curves /
+// level.pillars, while their collision uses these boxes (within a few centimetres of the surface).
 
 import { validateLevel, DEFAULTS } from './validate.js';
-import { rectContains, subtractRect, sharedEdge, facingToYaw, EPS } from './geometry.js';
+import { rectContains, rectInside, subtractRect, sharedEdge, facingToYaw, EPS, sliceRect, runLength, compassPoint, arcSweep } from './geometry.js';
 
 export function buildLevel(data) {
   const errors = validateLevel(data);
@@ -54,7 +58,7 @@ export function buildLevel(data) {
       to: centre + width / 2,
       centre,
       width,
-      floor: a.floor,
+      floor: Math.max(a.floor, b.floor), // a door between different heights sits at the higher floor
       height: door.height ?? d.doorHeight,
     };
   });
@@ -182,6 +186,68 @@ export function buildLevel(data) {
     else box(w.x1 - t / 2, r.floor - d.floorThickness, w.z1, w.x1 + t / 2, y1, w.z2, 'wall', r.id);
   }
 
+  const roomOfRect = (rect) => rooms.find((r) => rectInside(rect, r));
+
+  // ---- Stairs: solid steps, each about defaults.stepHeight high ----
+  const stairs = (data.stairs || []).map((st) => {
+    const room = roomOfRect(st);
+    const bottom = st.bottom ?? room.floor;
+    const rise = st.top - bottom;
+    const n = Math.max(1, Math.round(rise / d.stepHeight));
+    for (let i = 0; i < n; i++) {
+      const s = sliceRect(st, st.up, n, i);
+      box(s.x, Math.min(bottom, room.floor), s.z, s.x + s.w, bottom + (rise * (i + 1)) / n, s.z + s.d, 'stair', room.id);
+    }
+    return { ...st, bottom, steps: n, room: room.id };
+  });
+
+  // ---- Ramps: a smooth slope on screen; underneath, invisible 5 cm steps the player glides up ----
+  const ramps = (data.ramps || []).map((rp) => {
+    const room = roomOfRect(rp);
+    const bottom = rp.bottom ?? room.floor;
+    const rise = rp.top - bottom;
+    const n = Math.max(1, Math.ceil(rise / 0.05));
+    for (let i = 0; i < n; i++) {
+      const s = sliceRect(rp, rp.up, n, i);
+      box(s.x, Math.min(bottom, room.floor), s.z, s.x + s.w, bottom + (rise * (i + 0.5)) / n, s.z + s.d, 'ramp-step', room.id);
+    }
+    return { ...rp, bottom, base: Math.min(bottom, room.floor), room: room.id, length: runLength(rp, rp.up) };
+  });
+
+  // ---- Curved walls: drawn smooth; collision is a chain of overlapping 0.3 m posts along the curve ----
+  const curves = (data.curves || []).map((c) => {
+    const sweep = arcSweep(c.start, c.end);
+    const mid = compassPoint(c.cx, c.cz, c.r, c.start + sweep / 2);
+    const room = roomAt(mid.x, mid.z) || roomAt(c.cx, c.cz);
+    const y0 = room.floor - d.floorThickness;
+    const y1 = c.height ? room.floor + c.height : room.floor + room.height + d.ceilingThickness;
+    const len = (Math.PI * 2 * c.r * sweep) / 360;
+    const n = Math.max(2, Math.ceil(len / (t / 2))); // posts every half wall-thickness -> no gaps
+    for (let i = 0; i <= n; i++) {
+      const p = compassPoint(c.cx, c.cz, c.r, c.start + (sweep * i) / n);
+      box(p.x - t / 2, y0, p.z - t / 2, p.x + t / 2, y1, p.z + t / 2, 'curve', room.id);
+    }
+    return { ...c, sweep, y0, y1, room: room.id, thickness: t };
+  });
+
+  // ---- Pillar grids: rows x cols pillars spread evenly over a rectangle ----
+  const pillars = [];
+  for (const pg of data.pillars || []) {
+    const room = roomOfRect(pg);
+    const size = pg.size ?? 0.6;
+    const shape = pg.shape ?? 'round';
+    const y0 = room.floor - d.floorThickness;
+    const y1 = pg.height ? room.floor + pg.height : room.floor + room.height + d.ceilingThickness;
+    for (let i = 0; i < pg.cols; i++) {
+      for (let j = 0; j < pg.rows; j++) {
+        const x = pg.x + ((i + 0.5) * pg.w) / pg.cols;
+        const z = pg.z + ((j + 0.5) * pg.d) / pg.rows;
+        box(x - size / 2, y0, z - size / 2, x + size / 2, y1, z + size / 2, 'pillar', room.id);
+        pillars.push({ x, z, size, shape, y0, y1, room: room.id });
+      }
+    }
+  }
+
   // ---- Item pedestals ----
   const items = (data.items || []).map((it) => {
     const r = byId.get(it.room);
@@ -189,8 +255,21 @@ export function buildLevel(data) {
     return { ...it, y: r.floor };
   });
 
-  const sRoom = roomAt(data.spawn.x, data.spawn.z);
-  const spawn = { x: data.spawn.x, y: sRoom.floor, z: data.spawn.z, yaw: facingToYaw(data.spawn.facing) };
+  // Height of the walkable surface at a point (floor, or the top of a stair/ramp there).
+  const groundAt = (x, z) => {
+    const room = roomAt(x, z);
+    if (!room) return 0;
+    let y = room.floor;
+    for (const b of boxes) {
+      if ((b.kind === 'stair' || b.kind === 'ramp-step') && x >= b.min[0] && x <= b.max[0] && z >= b.min[2] && z <= b.max[2]) {
+        y = Math.max(y, b.max[1]);
+      }
+    }
+    return y;
+  };
+  for (const c of chasms) c.respawn.y = groundAt(c.respawn.x, c.respawn.z);
+
+  const spawn = { x: data.spawn.x, y: groundAt(data.spawn.x, data.spawn.z), z: data.spawn.z, yaw: facingToYaw(data.spawn.facing) };
 
   const minFloor = Math.min(...rooms.map((r) => r.floor));
   const bounds = {
@@ -206,6 +285,10 @@ export function buildLevel(data) {
     rooms,
     doors,
     chasms,
+    stairs,
+    ramps,
+    curves,
+    pillars,
     items,
     spawn,
     boxes,
@@ -213,5 +296,6 @@ export function buildLevel(data) {
     // Last-resort safety net: anyone below this is sent back to the start.
     globalKillY: minFloor - 40,
     roomAt,
+    groundAt,
   };
 }

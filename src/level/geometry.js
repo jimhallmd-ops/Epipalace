@@ -91,3 +91,34 @@ export function facingToYaw(facing) {
   // Camera yaw turns counter-clockwise, compass degrees turn clockwise.
   return (-deg * Math.PI) / 180;
 }
+
+/** Point on a circle. `deg` is a compass angle: 0 = north, 90 = east (clockwise). */
+export function compassPoint(cx, cz, r, deg) {
+  const a = (deg * Math.PI) / 180;
+  return { x: cx + r * Math.sin(a), z: cz - r * Math.cos(a) };
+}
+
+/** Sweep of an arc in degrees, going clockwise from start to end (0 < sweep <= 360). */
+export function arcSweep(start, end) {
+  let s = (((end - start) % 360) + 360) % 360;
+  if (s === 0) s = 360;
+  return s;
+}
+
+export const DIRECTIONS = ['north', 'east', 'south', 'west'];
+
+/**
+ * Splits rectangle r into n equal slices along direction `dir` (the direction you walk to go UP
+ * the stairs/ramp). Slice 0 is at the bottom end, slice n-1 at the top end.
+ */
+export function sliceRect(r, dir, n, i) {
+  if (dir === 'north') return { x: r.x, w: r.w, z: r.z + r.d - ((i + 1) * r.d) / n, d: r.d / n };
+  if (dir === 'south') return { x: r.x, w: r.w, z: r.z + (i * r.d) / n, d: r.d / n };
+  if (dir === 'east') return { z: r.z, d: r.d, x: r.x + (i * r.w) / n, w: r.w / n };
+  return { z: r.z, d: r.d, x: r.x + r.w - ((i + 1) * r.w) / n, w: r.w / n }; // west
+}
+
+/** Length of a stairs/ramp rectangle in its "up" direction. */
+export function runLength(r, dir) {
+  return dir === 'north' || dir === 'south' ? r.d : r.w;
+}

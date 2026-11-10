@@ -2,16 +2,18 @@
 // An empty list means the level is fine. The game refuses to start (and the
 // Netlify deploy fails its tests) if any problem is found.
 
-import { rectsOverlap, rectInside, rectContains, sharedEdge, EPS } from './geometry.js';
+import { rectsOverlap, rectInside, rectContains, sharedEdge, EPS, DIRECTIONS, runLength, compassPoint, arcSweep } from './geometry.js';
 
+// Recommended proportions (see PROJECT.md, "Proportions"). A level file can override any of them.
 export const DEFAULTS = {
-  height: 4,
+  height: 3.5, // floor to ceiling, ordinary room
   wallThickness: 0.3,
   floorThickness: 0.3,
   ceilingThickness: 0.3,
-  doorWidth: 1.6,
-  doorHeight: 2.6,
+  doorWidth: 1.2,
+  doorHeight: 2.4,
   chasmDepth: 14,
+  stepHeight: 0.18, // target height of one stair step
 };
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -60,8 +62,12 @@ export function validateLevel(data) {
       errors.push(`${label}: Room ${a.id} and Room ${b.id} do not touch, so there is no wall to put a door in.`);
       continue;
     }
-    if (Math.abs((a.floor ?? 0) - (b.floor ?? 0)) > EPS) {
-      errors.push(`${label}: both rooms must have the same floor height (stairs are not supported yet).`);
+    const doorFloor = Math.max(a.floor ?? 0, b.floor ?? 0);
+    const doorTop = doorFloor + (door.height ?? d.doorHeight);
+    for (const r of [a, b]) {
+      if (doorTop > (r.floor ?? 0) + (r.height ?? d.height) - 0.1) {
+        errors.push(`${label}: the door is too tall for Room ${r.id} (its ceiling is lower than the top of the door).`);
+      }
     }
     const width = door.width ?? d.doorWidth;
     const centre = (edge.from + edge.to) / 2 + (door.offset ?? 0);
@@ -117,6 +123,74 @@ export function validateLevel(data) {
     if (!room) errors.push(`${label}: "room" must name an existing room.`);
     else if (!rectContains(room, it.x, it.z, -0.6)) errors.push(`${label}: must be inside Room ${room.id}, at least 0.6 m from its walls.`);
     if (inChasm(it.x, it.z, 0.5)) errors.push(`${label}: is in or too close to a chasm.`);
+  }
+
+  const inOneRoom = (rect) => rooms.find((r) => rectInside(rect, r));
+
+  for (const [kind, list] of [
+    ['Stairs', data.stairs || []],
+    ['Ramp', data.ramps || []],
+  ]) {
+    for (const [n, st] of list.entries()) {
+      const label = `${kind} ${n + 1}`;
+      const bad = ['x', 'z', 'w', 'd', 'top'].filter((k) => !isNum(st[k]));
+      if (bad.length) {
+        errors.push(`${label}: ${bad.join(', ')} must be numbers.`);
+        continue;
+      }
+      if (!DIRECTIONS.includes(st.up)) errors.push(`${label}: "up" must be north, east, south or west.`);
+      const room = inOneRoom(st);
+      if (!room) {
+        errors.push(`${label}: must lie completely inside one room.`);
+        continue;
+      }
+      const bottom = st.bottom ?? room.floor ?? 0;
+      const rise = st.top - bottom;
+      if (rise <= 0.05) errors.push(`${label}: its top (${st.top} m) must be higher than its bottom (${bottom} m).`);
+      if (st.top > (room.floor ?? 0) + (room.height ?? d.height) - 2) {
+        errors.push(`${label}: the top is too close to Room ${room.id}'s ceiling to stand on (needs 2 m of head room).`);
+      }
+      if (st.w < 0.9 || st.d < 0.9) errors.push(`${label}: must be at least 0.9 m wide.`);
+      if (DIRECTIONS.includes(st.up) && rise > 0) {
+        const run = runLength(st, st.up);
+        if (kind === 'Stairs') {
+          const steps = Math.max(1, Math.round(rise / d.stepHeight));
+          if (run / steps < 0.2) {
+            errors.push(`${label}: too steep (${steps} steps in ${run} m). Make it at least ${(steps * 0.25).toFixed(1)} m long, or lower.`);
+          }
+        } else {
+          const deg = (Math.atan2(rise, run) * 180) / Math.PI;
+          if (deg > 40) errors.push(`${label}: too steep (${deg.toFixed(0)}°). Keep ramps under 40°; make it longer.`);
+        }
+      }
+    }
+  }
+
+  for (const [n, c] of (data.curves || []).entries()) {
+    const label = `Curved wall ${n + 1}`;
+    const bad = ['cx', 'cz', 'r', 'start', 'end'].filter((k) => !isNum(c[k]));
+    if (bad.length) {
+      errors.push(`${label}: ${bad.join(', ')} must be numbers.`);
+      continue;
+    }
+    if (c.r < 0.5) errors.push(`${label}: radius must be at least 0.5 m.`);
+    const mid = compassPoint(c.cx, c.cz, c.r, c.start + arcSweep(c.start, c.end) / 2);
+    if (!roomAt(mid.x, mid.z)) errors.push(`${label}: the middle of the curve is not inside any room.`);
+  }
+
+  for (const [n, pg] of (data.pillars || []).entries()) {
+    const label = `Pillar grid ${n + 1}`;
+    const bad = ['x', 'z', 'w', 'd', 'rows', 'cols'].filter((k) => !isNum(pg[k]));
+    if (bad.length) {
+      errors.push(`${label}: ${bad.join(', ')} must be numbers.`);
+      continue;
+    }
+    if (!Number.isInteger(pg.rows) || !Number.isInteger(pg.cols) || pg.rows < 1 || pg.cols < 1 || pg.rows * pg.cols > 400) {
+      errors.push(`${label}: rows and columns must be whole numbers (1 or more, at most 400 pillars).`);
+    }
+    const size = pg.size ?? 0.6;
+    if (size < 0.2 || size > 4) errors.push(`${label}: pillar size must be between 0.2 and 4 m.`);
+    if (!inOneRoom(pg)) errors.push(`${label}: must lie completely inside one room.`);
   }
 
   const s = data.spawn;

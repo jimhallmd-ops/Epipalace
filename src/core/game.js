@@ -22,8 +22,20 @@ export function createGame(level) {
     player.grounded = false;
   }
 
+  // The game advances in fixed 1/60 s steps. On a slow device (few frames per second) several
+  // steps run per frame, so walking speed stays the same instead of turning into slow motion.
+  const STEP = 1 / 60;
+  let pending = 0;
   function update(dt, input) {
-    stepPlayer(player, input, level.boxes, dt);
+    pending = Math.min(pending + Math.max(dt, 0), 0.25); // after a long pause, don't fast-forward
+    while (pending >= STEP) {
+      pending -= STEP;
+      tick(input);
+    }
+  }
+
+  function tick(input) {
+    stepPlayer(player, input, level.boxes, STEP);
 
     // Fell into a chasm? Back to the top.
     for (const c of level.chasms) {
