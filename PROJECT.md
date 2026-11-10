@@ -193,25 +193,41 @@ Saved in `docs/sketches/` (phone metadata removed):
 the *order of spaces* and *where the numbered spots are*, not as exact floor plans.
 Proportions, exact angles and wobbly lines should not be copied literally.
 
-### My reading of the sketches (unconfirmed)
+### Confirmed by the owner
 
-- Hatching (diagonal lines) probably means stairs or ramps.
-- Half-moons with zigzags inside (top-right branch, near 4b) might be chasms or pits.
-- Entrance: rounded lobes at the bottom are the way in. A long hall with dashed walls (open
-  colonnade?) leads up to a wide curved hall with two statues by a step, and a raised
-  platform at 4. The hatched bands at its top-left and top-right are probably the stairs to the two branches.
-- Top-left branch: a honeycomb of round chambers, each with an oval in it (pillar? pit?), a
-  dotted-floor room, and a winding tunnel loop leading to 5 and 6.
-- Top-right branch: diagonal layout around a long hatched band, with an unnumbered circle top-left and stairs bottom-right.
-- Left wing: the word near 8b–10b looks like "open" (open-air?). Arched feature in the middle, ↑/↓ arrows, decorative curls near 3b.
-- Right wing: probably outdoors. "Lake", a large tree (5c in its canopy), a row of T-shapes along 2c, 8c bush or cloud.
+- **Numbers = mnemonic object spots** (except the entrance numbers below, which mark connections).
+- **Diagonal hatching = stairs.**
+- **Half-moons with zigzags = pits / chasms.**
+- **Entrance number 4** (the raised platform at the top of the entrance, Sketch 1 D3) is "extra",
+  not a connection. Exactly what "extra" means is still to be confirmed.
 
-### Open questions (asked, not yet answered)
+### How the sketches connect
 
-1. Are all the numbers mnemonic object spots, or are some of them room labels?
-2. Does hatching mean stairs or ramps?
-3. Are the zigzag half-moons chasms or pits?
-4. Should the level format support angled and curved walls (recommended), or is a blocky version OK?
-5. What scale? (Default: rooms about 8–12 m across.)
-6. Where do the left wing and right wing connect to the entrance? Where do the branches connect?
-7. Details per sketch: dashed walls, statues, ovals in the honeycomb, dotted floor, "open", the arched feature, ↑/↓ arrows, the tree, the T-shapes, and the unclear labels "1b/1c" and "2c/7c".
+Grid references use the lettered grid (columns A–H, rows 1–10) laid over each sketch.
+
+| Entrance (Sketch 1) point | Where | Connects to | Point on that sketch |
+|---|---|---|---|
+| **1a**: stairs at the top-right of the long hall | F5 | **Top-left branch** (Sketch 2) | C7: small stairs on the lower-left edge of the dotted-floor room |
+| **1b**: stairs at the top-left of the long hall (the unclear label is "1b") | B5–C5 | **Top-right branch** (Sketch 3) | F8: the ladder-like stairs at the bottom-right |
+| **2**: right side of the long hall | F7 | **Left wing** (Sketch 4) | A7: the open, curly end of the long horizontal corridor |
+| **3**: left side of the long hall | B7 | **Right wing** (Sketch 5) | G6: the gap in the wall between 1c and 8c |
+
+Note: these cross over. The *top-left* branch and the *left* wing join on the entrance's
+*right* side, and vice versa. Built as given. The sketch names are kept as labels.
+
+### Still to confirm
+
+1. What does "extra" mean for entrance number 4?
+2. Should the areas keep their names (left wing on the right side), or be renamed to match where they sit?
+
+### My reading of the remaining details (unconfirmed, sensible defaults will be used)
+
+- Entrance: rounded lobes at the bottom are the way in. The long hall has dashed walls (open
+  colonnade?) and opens into a wide curved hall with two statues by a step.
+- Top-left branch: a honeycomb of round chambers, each with an oval (pillar?), a dotted-floor
+  room, and a winding tunnel loop leading to 5 and 6.
+- Top-right branch: diagonal layout around a long staircase, with an unnumbered circle top-left.
+- Left wing: "open" near 8b–10b (open-air?), an arched feature, ↑/↓ arrows, decorative curls.
+- Right wing: probably outdoors. "Lake", a large tree (5c in its canopy), T-shapes along 2c, 8c bush or cloud.
+- Scale: rooms about 8–12 m across unless told otherwise.
+- Shapes: extend the level format to support angled and curved walls, so the layout feels like the sketches.
