@@ -1,0 +1,9 @@
+# Netlify reads this file automatically. It overrides the build settings in the Netlify dashboard.
+[build]
+  # Run the collision/level tests first: if any test fails, the deploy is cancelled
+  # and the previous working version of the site stays live.
+  command = "npm test && npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
