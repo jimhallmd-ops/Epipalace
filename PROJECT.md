@@ -22,7 +22,7 @@ This file is the single source of truth for goals, decisions and progress. Updat
 | Piece | What | Status |
 |---|---|---|
 | 1 | Foundation: level format, hollow rooms, collision + tests, desktop & phone controls, chasm respawn, debug map | **Done** (placeholder layout) |
-| 2 | Real layout from the five sketches (entrance, top-left branch, top-right branch, left wing, right wing) | Not started. **The sketches have not been received yet.** Re-send them first. |
+| 2 | Real layout from the five sketches (entrance, top-left branch, top-right branch, left wing, right wing) | Not started. Sketches received (see section 8); waiting on answers to the open questions. |
 | 3+ | Mnemonic objects in the numbered item spots, epidemiology content, polish | Not started |
 
 ---
@@ -170,7 +170,48 @@ Phone controls switch on automatically on touch-screen devices (or on first touc
 ### Known limitations / next steps
 
 - The layout is a **placeholder**. The real one comes from the sketches in Piece 2.
-- The five sketches and the earlier AI conversation were **not received** in the Piece 1 session. Please re-send them.
+- The earlier AI conversation was never received (not needed, since its code is not reused).
 - No stairs/ramps or different floor heights between connected rooms yet.
 - In portrait orientation on phones the field of view is narrow. Consider landscape, or widening the view.
 - No sound, no mnemonic objects yet. Item spots are plain pedestals.
+
+---
+
+## 8. Sketches (input for Piece 2)
+
+Saved in `docs/sketches/` (phone metadata removed):
+
+| File | Area | Numbers marked on it |
+|---|---|---|
+| `1-entrance.jpg` | Entrance | 1 / 1b-or-1c (left, unclear), 1a, 2, 3, 4 |
+| `2-top-left-branch.jpg` | Top-left branch | 1 to 6 |
+| `3-top-right-branch.jpg` | Top-right branch | 7 to 12 |
+| `4-left-wing.jpg` | Left wing | 1b to 10b |
+| `5-right-wing.jpg` | Right wing | 1c to 8c |
+
+**The owner says the sketches are very imperfect.** Treat them as a guide to the *feel*,
+the *order of spaces* and *where the numbered spots are*, not as exact floor plans.
+Proportions, exact angles and wobbly lines should not be copied literally.
+
+### My reading of the sketches (unconfirmed)
+
+- Hatching (diagonal lines) probably means stairs or ramps.
+- Half-moons with zigzags inside (top-right branch, near 4b) might be chasms or pits.
+- Entrance: rounded lobes at the bottom are the way in. A long hall with dashed walls (open
+  colonnade?) leads up to a wide curved hall with two statues by a step, and a raised
+  platform at 4. The hatched bands at its top-left and top-right are probably the stairs to the two branches.
+- Top-left branch: a honeycomb of round chambers, each with an oval in it (pillar? pit?), a
+  dotted-floor room, and a winding tunnel loop leading to 5 and 6.
+- Top-right branch: diagonal layout around a long hatched band, with an unnumbered circle top-left and stairs bottom-right.
+- Left wing: the word near 8b–10b looks like "open" (open-air?). Arched feature in the middle, ↑/↓ arrows, decorative curls near 3b.
+- Right wing: probably outdoors. "Lake", a large tree (5c in its canopy), a row of T-shapes along 2c, 8c bush or cloud.
+
+### Open questions (asked, not yet answered)
+
+1. Are all the numbers mnemonic object spots, or are some of them room labels?
+2. Does hatching mean stairs or ramps?
+3. Are the zigzag half-moons chasms or pits?
+4. Should the level format support angled and curved walls (recommended), or is a blocky version OK?
+5. What scale? (Default: rooms about 8–12 m across.)
+6. Where do the left wing and right wing connect to the entrance? Where do the branches connect?
+7. Details per sketch: dashed walls, statues, ovals in the honeycomb, dotted floor, "open", the arched feature, ↑/↓ arrows, the tree, the T-shapes, and the unclear labels "1b/1c" and "2c/7c".
