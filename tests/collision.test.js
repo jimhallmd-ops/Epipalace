@@ -76,13 +76,13 @@ describe('simple closed room', () => {
     expect(p.grounded).toBe(true);
   });
 
-  it('jumps about 1.2 m and cannot pass through the ceiling', () => {
+  it('jumps about 0.9 m and cannot pass through the ceiling', () => {
     const p = createPlayer(boxLevel.spawn);
     settle(p, boxLevel.boxes);
     let peak = 0;
     walk(p, boxLevel.boxes, { jump: true }, 0.4, 1 / 60, (pl) => (peak = Math.max(peak, pl.y)));
-    expect(peak).toBeGreaterThan(1.0);
-    expect(peak).toBeLessThan(1.5);
+    expect(peak).toBeGreaterThan(0.7);
+    expect(peak).toBeLessThan(1.1);
 
     // A low ceiling: a 3 m tall room. Even a huge upward push stops at the ceiling.
     const low = buildLevel({ rooms: [{ id: 1, x: 0, z: 0, w: 4, d: 4, height: 3 }], spawn: { x: 2, z: 2 } });
@@ -114,7 +114,7 @@ describe('the real palace level', () => {
           let x = ns ? s : startOther;
           let z = ns ? startOther : s;
           if (chasmsHere.some((c) => x > c.x - R - 0.1 && x < c.x + c.w + R + 0.1 && z > c.z - R - 0.1 && z < c.z + c.d + R + 0.1)) continue;
-          const p = createPlayer({ x, y: room.floor, z, yaw });
+          const p = createPlayer({ x, y: level.groundAt(x, z), z, yaw });
           if (level.boxes.some((b) => playerOverlaps(p.x, p.y, p.z, b))) continue; // started inside a pedestal/partition
           walk(p, level.boxes, { forward: 1, run: true }, 6, 1 / 30, (pl) => {
             // never outside this room's walls

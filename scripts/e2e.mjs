@@ -43,11 +43,12 @@ try {
     const { player, state } = window.__epipalace.game;
     return { x: player.x, y: player.y, z: player.z, yaw: player.yaw, room: state.room?.id, respawns: state.respawns };
   });
-  const place = (x, z, yaw) => page.evaluate(([x, z, yaw]) => window.__epipalace.game.placeAt({ x, y: 0, z, yaw }), [x, z, yaw]);
+  const place = (x, z, yaw) => page.evaluate(([x, z, yaw]) => window.__epipalace.game.placeAt({ x, y: window.__epipalace.level.groundAt(x, z), z, yaw }), [x, z, yaw]);
   const hold = async (key, ms) => { await page.keyboard.down(key); await page.waitForTimeout(ms); await page.keyboard.up(key); await page.waitForTimeout(100); };
 
   let p = await P();
-  check(p.room === 1 && Math.abs(p.y) < 1e-6, `player starts standing in Room 1 (room ${p.room}, y ${p.y.toFixed(3)})`);
+  const spawnY = await page.evaluate(() => window.__epipalace.level.spawn.y);
+  check(p.room === 1 && Math.abs(p.y - spawnY) < 1e-6, `player starts standing in Room 1 (room ${p.room}, y ${p.y.toFixed(3)})`);
   await page.screenshot({ path: `${OUT}/02-entrance.png` });
 
   // Walk east into Room 1's east wall (x = 6) for 3 seconds: must stop at the wall.
@@ -71,6 +72,30 @@ try {
   const hudText = await page.textContent('.hud-room');
   check(hudText.includes('Room 2'), `HUD shows the current room ("${hudText}")`);
   await page.screenshot({ path: `${OUT}/04-central-hall.png` });
+
+  // Ramp: from the Entrance up into the Central Hall
+  await place(0, 27, 0);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/04b-ramp.png` });
+  await hold('KeyW', 2500);
+  p = await P();
+  check(p.room === 2 && Math.abs(p.y) < 0.01, `walking up the ramp reaches Room 2 at floor 0 (room ${p.room}, y ${p.y.toFixed(2)})`);
+
+  // Stairs: from the Right Wing up into the Upper Gallery
+  await place(17, 13, -Math.PI / 2);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/04c-stairs.png` });
+  await hold('KeyW', 3000);
+  p = await P();
+  check(p.room === 9 && Math.abs(p.y - 1.8) < 0.01, `walking up the stairs reaches Room 9 at 1.8 m (room ${p.room}, y ${p.y.toFixed(2)})`);
+
+  // Look at the curved wall and the pillars
+  await place(-5, -12, Math.PI / 2);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/04d-curved-wall.png` });
+  await place(-9.5, 13, Math.PI / 2);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/04e-pillars.png` });
 
   // Jump
   await place(0, 13, 0);

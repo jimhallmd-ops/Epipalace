@@ -3,6 +3,118 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { floorTexture, wallTexture, labelTexture } from './textures.js';
 import { PLAYER } from '../core/physics.js';
+import { compassPoint } from '../level/geometry.js';
+
+// Proportions review: a 72° vertical view made rooms look stretched and huge. 60° vertical
+// (about 90° horizontal on a widescreen) looks natural. On tall phone screens we widen the
+// vertical view so the horizontal view never drops below ~65°.
+const VERTICAL_FOV = 60;
+const MIN_HORIZONTAL_FOV = 65;
+function fovFor(aspect) {
+  const minV = (2 * Math.atan(Math.tan((MIN_HORIZONTAL_FOV * Math.PI) / 360) / aspect) * 180) / Math.PI;
+  return Math.min(Math.max(VERTICAL_FOV, minV), 95);
+}
+
+/** A sloped ramp: top surface + sides, from its low end to its high end. */
+function rampGeometry(rp) {
+  const { x, z, w, d, up, bottom, top, base } = rp;
+  // corners of the rectangle, and the height at each corner
+  const hAt = (px, pz) => {
+    let t;
+    if (up === 'north') t = (z + d - pz) / d;
+    else if (up === 'south') t = (pz - z) / d;
+    else if (up === 'east') t = (px - x) / w;
+    else t = (x + w - px) / w;
+    return bottom + (top - bottom) * t;
+  };
+  const c = [
+    [x, z],
+    [x + w, z],
+    [x + w, z + d],
+    [x, z + d],
+  ];
+  const pos = [];
+  const tri = (a, b, cc) => pos.push(...a, ...b, ...cc);
+  const T = c.map(([px, pz]) => [px, hAt(px, pz), pz]);
+  const B = c.map(([px, pz]) => [px, base, pz]);
+  // top (two triangles, wound so the normal points up)
+  tri(T[0], T[3], T[2]);
+  tri(T[0], T[2], T[1]);
+  // four sides
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    tri(B[i], T[i], T[j]);
+    tri(B[i], T[j], B[j]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  const uv = [];
+  for (let i = 0; i < pos.length; i += 3) uv.push(pos[i] + pos[i + 1], pos[i + 2] + pos[i + 1]);
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return g;
+}
+
+/** A smooth curved wall (a slice of a thick ring). */
+function arcWallGeometry(c) {
+  const segs = Math.max(8, Math.ceil(c.sweep / 4));
+  const ri = c.r - c.thickness / 2;
+  const ro = c.r + c.thickness / 2;
+  const pos = [];
+  const nor = [];
+  const uv = [];
+  const push = (p, n, u, v) => {
+    pos.push(...p);
+    nor.push(...n);
+    uv.push(u, v);
+  };
+  const quad = (a, b, cc, dd, na, nb, nc, nd, ua, ub) => {
+    // a-b-c, a-c-d
+    push(a, na, ua, a[1]);
+    push(b, nb, ub, b[1]);
+    push(cc, nc, ub, cc[1]);
+    push(a, na, ua, a[1]);
+    push(cc, nc, ub, cc[1]);
+    push(dd, nd, ua, dd[1]);
+  };
+  for (let i = 0; i < segs; i++) {
+    const a0 = c.start + (c.sweep * i) / segs;
+    const a1 = c.start + (c.sweep * (i + 1)) / segs;
+    const o0 = compassPoint(c.cx, c.cz, ro, a0);
+    const o1 = compassPoint(c.cx, c.cz, ro, a1);
+    const i0 = compassPoint(c.cx, c.cz, ri, a0);
+    const i1 = compassPoint(c.cx, c.cz, ri, a1);
+    const n0 = [Math.sin((a0 * Math.PI) / 180), 0, -Math.cos((a0 * Math.PI) / 180)];
+    const n1 = [Math.sin((a1 * Math.PI) / 180), 0, -Math.cos((a1 * Math.PI) / 180)];
+    const neg = (n) => n.map((v) => -v);
+    const u0 = (c.r * a0 * Math.PI) / 180;
+    const u1 = (c.r * a1 * Math.PI) / 180;
+    // outer face
+    quad([o0.x, c.y0, o0.z], [o0.x, c.y1, o0.z], [o1.x, c.y1, o1.z], [o1.x, c.y0, o1.z], n0, n0, n1, n1, u0, u0);
+    // inner face
+    quad([i1.x, c.y0, i1.z], [i1.x, c.y1, i1.z], [i0.x, c.y1, i0.z], [i0.x, c.y0, i0.z], neg(n1), neg(n1), neg(n0), neg(n0), u1, u1);
+    // top
+    const up = [0, 1, 0];
+    quad([i0.x, c.y1, i0.z], [i1.x, c.y1, i1.z], [o1.x, c.y1, o1.z], [o0.x, c.y1, o0.z], up, up, up, up, u0, u1);
+  }
+  // end caps
+  for (const [a, sign] of [
+    [c.start, -1],
+    [c.start + c.sweep, 1],
+  ]) {
+    const o = compassPoint(c.cx, c.cz, ro, a);
+    const ii = compassPoint(c.cx, c.cz, ri, a);
+    const rad = (a * Math.PI) / 180;
+    const n = [sign * Math.cos(rad), 0, sign * Math.sin(rad)]; // tangent direction
+    const P = sign > 0 ? [ii, o] : [o, ii];
+    quad([P[0].x, c.y0, P[0].z], [P[0].x, c.y1, P[0].z], [P[1].x, c.y1, P[1].z], [P[1].x, c.y0, P[1].z], n, n, n, n, 0, 0.3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return g;
+}
 
 /** A box whose texture repeats every `tile` metres in world space, so tiles are the same size everywhere. */
 function worldBoxGeometry(b, tile = 1) {
@@ -51,7 +163,7 @@ export function createScene(container, level) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#dfe9f2');
 
-  const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.05, 200);
+  const camera = new THREE.PerspectiveCamera(fovFor(window.innerWidth / window.innerHeight), window.innerWidth / window.innerHeight, 0.05, 200);
   camera.rotation.order = 'YXZ';
 
   // ---- Lighting: bright and even, so no room is ever dark ----
@@ -76,6 +188,10 @@ export function createScene(container, level) {
     'pit-wall': new THREE.MeshBasicMaterial({ vertexColors: true }),
     'pit-floor': new THREE.MeshBasicMaterial({ color: '#050508' }),
     item: new THREE.MeshLambertMaterial({ color: '#d4a62a' }),
+    stair: new THREE.MeshLambertMaterial({ color: '#e2d9c6', map: floorTex }),
+    ramp: new THREE.MeshLambertMaterial({ color: '#ddd3bd', map: floorTex, side: THREE.DoubleSide }),
+    pillar: new THREE.MeshLambertMaterial({ color: '#efe9dc' }),
+    curve: new THREE.MeshLambertMaterial({ color: '#f4f1ea', map: wallTex, side: THREE.DoubleSide }),
   };
   const floorMats = new Map(); // one per room colour
   const floorMat = (room) => {
@@ -87,7 +203,10 @@ export function createScene(container, level) {
 
   // ---- Solid geometry, merged by material (few draw calls = smooth on phones) ----
   const groups = new Map();
+  // Ramp steps, curve posts and pillars are collision-only boxes; they are drawn smoothly below.
+  const drawnSeparately = new Set(['ramp-step', 'curve', 'pillar']);
   for (const b of level.boxes) {
+    if (drawnSeparately.has(b.kind)) continue;
     const mat = b.kind === 'floor' ? floorMat(roomById.get(b.room)) : mats[b.kind];
     if (!groups.has(mat)) groups.set(mat, []);
     const geo = worldBoxGeometry(b);
@@ -98,6 +217,22 @@ export function createScene(container, level) {
     const mesh = new THREE.Mesh(mergeGeometries(geos), mat);
     scene.add(mesh);
     geos.forEach((g) => g.dispose());
+  }
+
+  // ---- Smooth shapes: ramps, curved walls, pillars ----
+  if (level.ramps.length) scene.add(new THREE.Mesh(mergeGeometries(level.ramps.map(rampGeometry)), mats.ramp));
+  if (level.curves.length) scene.add(new THREE.Mesh(mergeGeometries(level.curves.map(arcWallGeometry)), mats.curve));
+  if (level.pillars.length) {
+    const geos = level.pillars.map((pl) => {
+      const h = pl.y1 - pl.y0;
+      const g =
+        pl.shape === 'square'
+          ? new THREE.BoxGeometry(pl.size, h, pl.size)
+          : new THREE.CylinderGeometry(pl.size / 2, pl.size / 2, h, 20).toNonIndexed();
+      g.translate(pl.x, pl.y0 + h / 2, pl.z);
+      return pl.shape === 'square' ? g.toNonIndexed() : g;
+    });
+    scene.add(new THREE.Mesh(mergeGeometries(geos), mats.pillar));
   }
 
   // ---- Glowing ceiling panels (look like lights) ----
@@ -206,13 +341,23 @@ export function createScene(container, level) {
 
   function resize() {
     camera.aspect = window.innerWidth / window.innerHeight;
+    camera.fov = fovFor(camera.aspect);
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   }
   window.addEventListener('resize', resize);
 
+  // The eye height glides over stair steps instead of jumping 18 cm at a time.
+  let eyeY = null;
+  let lastT = performance.now();
   function render(player) {
-    camera.position.set(player.x, player.y + PLAYER.eyeHeight, player.z);
+    const now = performance.now();
+    const dt = Math.min((now - lastT) / 1000, 0.1);
+    lastT = now;
+    const target = player.y + PLAYER.eyeHeight;
+    if (eyeY === null || Math.abs(target - eyeY) > 0.6 || !player.grounded) eyeY = target;
+    else eyeY += (target - eyeY) * Math.min(1, dt * 14);
+    camera.position.set(player.x, eyeY, player.z);
     camera.rotation.y = player.yaw;
     camera.rotation.x = player.pitch;
     renderer.render(scene, camera);
