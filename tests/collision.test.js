@@ -100,6 +100,8 @@ describe('the real palace level', () => {
       const doorsHere = level.doors.filter((d) => d.rooms.includes(room.id));
       const chasmsHere = level.chasms.filter((c) => c.room === room.id);
       for (const [dir, yaw] of Object.entries(YAWS)) {
+        // Open-air and railing sides are tested separately (tests/openair.test.js).
+        if ((room.sides?.[dir] ?? 'wall') !== 'wall') continue;
         const ns = dir === 'north' || dir === 'south';
         // Walk along many parallel lines across the room.
         const span = ns ? [room.x, room.x + room.w] : [room.z, room.z + room.d];

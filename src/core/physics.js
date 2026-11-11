@@ -61,10 +61,10 @@ function blockedAt(x, y, z, boxes) {
  * With canStep, low obstacles (stairs) are stepped onto instead of blocking.
  * Returns which axes were blocked.
  */
-export function moveAndCollide(p, dx, dy, dz, boxes, { canStep = false } = {}) {
+export function moveAndCollide(p, dx, dy, dz, boxes, { canStep = false, stepUp = STEP_UP } = {}) {
   const r = PLAYER.radius;
   const h = PLAYER.height;
-  const up = canStep ? STEP_UP : 0;
+  const up = canStep ? stepUp : 0;
   // Only consider boxes near the path this frame (faster on phones).
   const minX = Math.min(p.x, p.x + dx) - r - 0.01;
   const maxX = Math.max(p.x, p.x + dx) + r + 0.01;
@@ -86,7 +86,7 @@ export function moveAndCollide(p, dx, dy, dz, boxes, { canStep = false } = {}) {
   const tryStep = (b) => {
     if (!canStep) return false;
     const rise = b.max[1] - p.y;
-    if (rise <= 0 || rise > STEP_UP + 1e-9) return false;
+    if (rise <= 0 || rise > up + 1e-9) return false;
     if (blockedAt(p.x, b.max[1], p.z, near)) return false;
     p.y = b.max[1];
     hit.stepped = true;
@@ -131,11 +131,33 @@ export function moveAndCollide(p, dx, dy, dz, boxes, { canStep = false } = {}) {
   return hit;
 }
 
+export const CLIMB_SPEED = 2.2; // metres per second up or down a ladder
+export const SWIM_SPEED = 2.2;
+export const WATER_STEP_UP = 1.7; // in water you can haul yourself out over a pool edge this high
+
+/** The ladder whose climbing zone the player is in, if any. */
+export function ladderAt(p, ladders) {
+  for (const l of ladders || []) {
+    if (p.x >= l.zone.x0 && p.x <= l.zone.x1 && p.z >= l.zone.z0 && p.z <= l.zone.z1 && p.y >= l.bottom - 0.1 && p.y <= l.top + 0.05) return l;
+  }
+  return null;
+}
+/** The pool the player is in (feet below its surface), if any. */
+export function waterAt(p, water) {
+  for (const w of water || []) {
+    if (p.x >= w.x && p.x <= w.x + w.w && p.z >= w.z && p.z <= w.z + w.d && p.y < w.surface && p.y > w.bottom - 0.5) return w;
+  }
+  return null;
+}
+
 /**
  * Advances the player by dt seconds.
- * input = { forward: -1..1, strafe: -1..1 (right is +), run: bool, jump: bool }
+ * input = { forward: -1..1, strafe: -1..1 (right is +), run, jump, down (dive) }
+ * world = { boxes, ladders, water }, or just an array of boxes.
  */
-export function stepPlayer(p, input, boxes, dt) {
+export function stepPlayer(p, input, world, dt) {
+  if (Array.isArray(world)) world = { boxes: world };
+  const boxes = world.boxes;
   dt = Math.min(Math.max(dt, 0), 0.05); // a long freeze is treated as one short step
 
   let f = input.forward || 0;
@@ -145,26 +167,80 @@ export function stepPlayer(p, input, boxes, dt) {
     f /= len;
     s /= len;
   }
-  const speed = input.run ? PLAYER.runSpeed : PLAYER.walkSpeed;
   const sin = Math.sin(p.yaw);
   const cos = Math.cos(p.yaw);
+  const look = [-sin, -cos]; // the way the player faces, flat
+  const wasGrounded = p.grounded;
+  p.ladderCooldown = Math.max(0, (p.ladderCooldown || 0) - dt);
+
+  // ---- Ladder ----
+  const ladder = p.ladderCooldown > 0 ? null : ladderAt(p, world.ladders);
+  if (ladder) {
+    const towards = look[0] * ladder.fx + look[1] * ladder.fz; // > 0 when looking at the ladder
+    const climbIntent = towards > 0.2 ? f : towards < -0.2 ? -f : 0;
+    const hanging = !wasGrounded || (climbIntent > 0 && Math.abs(f) > 0.1);
+    if (hanging && !(wasGrounded && climbIntent <= 0)) {
+      p.climbing = true;
+      if (input.jump) {
+        // let go: hop backwards off the ladder
+        p.vx = -ladder.fx * 2.5;
+        p.vz = -ladder.fz * 2.5;
+        p.vy = 3;
+        p.ladderCooldown = 0.5;
+        p.climbing = false;
+      } else {
+        p.vy = climbIntent * CLIMB_SPEED;
+        // keep pressed against the ladder; near the top, step forward onto the landing
+        const push = p.vy > 0 && p.y > ladder.top - 0.4 ? 2 : climbIntent > 0 ? 0.6 : 0;
+        p.vx = ladder.fx * push + (cos * s) * 1.0;
+        p.vz = ladder.fz * push + (-sin * s) * 1.0;
+      }
+      const hit = moveAndCollide(p, p.vx * dt, p.vy * dt, p.vz * dt, boxes, { canStep: true });
+      p.grounded = hit.landed && p.vy <= 0;
+      if (p.grounded) p.vy = 0;
+      return hit;
+    }
+  }
+  p.climbing = false;
+
+  // ---- Water ----
+  const pool = waterAt(p, world.water);
+  const depthIn = pool ? pool.surface - p.y : 0; // how deep the feet are
+  const swimming = pool && depthIn > 1.2;
+  let speed = input.run ? PLAYER.runSpeed : PLAYER.walkSpeed;
+  if (swimming) speed = SWIM_SPEED;
+  else if (pool && depthIn > 0.3) speed *= 0.6; // wading
+
   // forward = (-sin, -cos), right = (cos, -sin)
   p.vx = (-sin * f + cos * s) * speed;
   p.vz = (-cos * f - sin * s) * speed;
 
-  const wasGrounded = p.grounded;
   let jumped = false;
-  if (input.jump && p.grounded) {
-    p.vy = PLAYER.jumpSpeed;
-    jumped = true;
+  if (swimming) {
+    // Float with eyes just above the surface; Space swims up, Dive (C) swims down.
+    const floatY = pool.surface + 0.15 - PLAYER.eyeHeight;
+    if (input.jump) p.vy = 2.2;
+    else if (input.down) p.vy = -2.2;
+    else p.vy = Math.max(-1.2, Math.min(1.2, (floatY - p.y) * 3));
+  } else {
+    if (input.jump && p.grounded) {
+      p.vy = PLAYER.jumpSpeed;
+      jumped = true;
+    }
+    p.vy = Math.max(p.vy - PLAYER.gravity * dt * (pool ? 0.5 : 1), pool ? -4 : -PLAYER.maxFallSpeed);
   }
-  p.vy = Math.max(p.vy - PLAYER.gravity * dt, -PLAYER.maxFallSpeed);
 
-  const hit = moveAndCollide(p, p.vx * dt, p.vy * dt, p.vz * dt, boxes, { canStep: wasGrounded && !jumped });
+  // In water you can haul yourself out over the pool edge; on land you climb normal steps.
+  const inWater = pool && depthIn > 0.05; // any depth: you must always be able to get out
+  const hit = moveAndCollide(p, p.vx * dt, p.vy * dt, p.vz * dt, boxes, {
+    canStep: inWater || (wasGrounded && !jumped),
+    stepUp: inWater ? WATER_STEP_UP : STEP_UP,
+  });
   p.grounded = hit.landed;
+  p.swimming = !!swimming;
 
   // Keep feet on stairs/ramps when walking down them, instead of a series of tiny falls.
-  if (wasGrounded && !jumped && !hit.landed) {
+  if (wasGrounded && !jumped && !hit.landed && !swimming) {
     const y0 = p.y;
     const down = moveAndCollide(p, 0, -(STEP_UP + 0.05), 0, boxes);
     if (down.landed) p.grounded = true;

@@ -91,4 +91,35 @@ describe('editing operations', () => {
   it('a blank level is valid', () => {
     expect(validateLevel(M.tidy(M.blankLevel()))).toEqual([]);
   });
+
+  it('rotating a square room a quarter-turn turns everything inside it and keeps the level valid', () => {
+    const data = M.normalize({
+      rooms: [{ id: 1, x: 0, z: 0, w: 10, d: 10, sides: { north: 'railing' } }],
+      stairs: [{ x: 1, z: 1, w: 2, d: 4, up: 'north', top: 1 }],
+      pillars: [{ x: 5, z: 6, w: 4, d: 2, rows: 1, cols: 3 }],
+      ladders: [{ x: 9.85, z: 8, facing: 'east', top: 2 }],
+      items: [{ id: 1, room: 1, x: 2, z: 8 }],
+      spawn: { x: 5, z: 5, facing: 'north' },
+    });
+    M.rotateRoom90(data, data.rooms[0]);
+    expect(data.rooms[0].sides).toEqual({ east: 'railing' });
+    expect(data.stairs[0]).toMatchObject({ x: 5, z: 1, w: 4, d: 2, up: 'east' });
+    expect(data.pillars[0]).toMatchObject({ rows: 3, cols: 1, w: 2, d: 4 });
+    expect(data.ladders[0]).toMatchObject({ x: 2, z: 9.85, facing: 'south' });
+    expect(data.items[0]).toMatchObject({ x: 2, z: 2 });
+    expect(data.spawn.facing).toBe('east');
+    expect(validateLevel(M.tidy(data))).toEqual([]);
+    // four turns bring it back where it started
+    for (let i = 0; i < 3; i++) M.rotateRoom90(data, data.rooms[0]);
+    expect(data.stairs[0]).toMatchObject({ x: 1, z: 1, w: 2, d: 4, up: 'north' });
+  });
+
+  it('a ladder snaps to the nearest platform edge or wall, facing it', () => {
+    const data = M.normalize(palace);
+    const pf = data.platforms[0];
+    expect(M.ladderSpotAt(data, pf.x - 0.5, pf.z + 2)).toMatchObject({ x: pf.x, facing: 'east', top: pf.top });
+    expect(M.ladderSpotAt(data, -23.4, 25)).toMatchObject({ facing: 'west' });
+    expect(M.ladderSpotAt(data, -16, 24)).toBeNull(); // middle of a room: nothing to lean on
+  });
 });
+

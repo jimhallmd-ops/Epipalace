@@ -98,3 +98,16 @@ html, body {
 .level-error pre { white-space: pre-wrap; background: #fff3f3; padding: 12px; border-radius: 8px; }
 .editor-link { margin: 14px 0 0; font-size: 13px; }
 .editor-link a { color: var(--ink); opacity: 0.75; }
+.btn-use, .btn-dive { display: none; width: 72px; height: 72px; border-radius: 50%; font-size: 15px; }
+.btn-use.on, .btn-dive.on { display: block; }
+.btn-use { right: max(124px, calc(env(safe-area-inset-right) + 112px)); bottom: max(34px, env(safe-area-inset-bottom)); background: rgba(42, 157, 143, 0.8); }
+.btn-dive { right: max(30px, env(safe-area-inset-right)); bottom: max(128px, calc(env(safe-area-inset-bottom) + 100px)); }
+.prompt {
+  position: absolute; left: 50%; top: 58%; transform: translateX(-50%); z-index: 6; pointer-events: none;
+  background: rgba(29, 53, 87, 0.85); color: #fff; padding: 7px 14px; border-radius: 8px; font-weight: 600; font-size: 15px;
+}
+.prompt:empty { display: none; }
+.prompt kbd { background: #fff; color: #1d3557; border-radius: 4px; padding: 0 6px; margin-right: 6px; font: 700 13px system-ui, sans-serif; }
+.underwater { position: absolute; inset: 0; pointer-events: none; z-index: 3; background: rgba(30, 110, 170, 0.28); display: none; }
+.underwater.on { display: block; }
+.toast.secret { background: rgba(42, 157, 143, 0.92); }

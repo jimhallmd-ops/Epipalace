@@ -94,12 +94,19 @@ const toast = document.createElement('div');
 toast.className = 'toast';
 app.appendChild(toast);
 let toastTimer = 0;
-function showToast(text) {
+function showToast(text, kind = '') {
   toast.textContent = text;
+  toast.className = `toast ${kind}`;
   toast.classList.add('on');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove('on'), 1800);
 }
+const prompt = document.createElement('div');
+prompt.className = 'prompt';
+app.appendChild(prompt);
+const underwater = document.createElement('div');
+underwater.className = 'underwater';
+app.appendChild(underwater);
 const crosshair = document.createElement('div');
 crosshair.className = 'crosshair';
 app.appendChild(crosshair);
@@ -126,12 +133,13 @@ overlay.innerHTML = `
     <div class="controls desktop-only">
       <p><b>W A S D</b> or arrows: move &nbsp;·&nbsp; <b>Shift</b>: run</p>
       <p><b>Mouse</b>: look &nbsp;·&nbsp; <b>Space</b>: jump</p>
+      <p><b>E</b>: open doors, pull levers &nbsp;·&nbsp; <b>C</b>: dive (in water)</p>
       <p><b>M</b>: debug map &nbsp;·&nbsp; <b>Esc</b>: free the mouse</p>
     </div>
     <div class="controls touch-only">
       <p><b>Left thumb</b>: drag to move (push far to run)</p>
       <p><b>Right thumb</b>: drag to look</p>
-      <p><b>Jump</b> and <b>Map</b> buttons on screen</p>
+      <p><b>Jump</b> and <b>Map</b> buttons on screen; <b>Use</b> and <b>Dive</b> appear when needed</p>
     </div>
     <button type="button" class="start">Click to enter</button>
     <p class="editor-link"><a href="/editor/">Open the map editor</a></p>
@@ -179,6 +187,8 @@ function frame(now) {
     strafe: a.strafe + (b?.strafe || 0),
     run: a.run || !!b?.run,
     jump: a.jump || !!b?.jump,
+    down: a.down || !!b?.down,
+    use: a.use || !!b?.use,
   };
   const p = game.player;
   if (active) {
@@ -192,13 +202,22 @@ function frame(now) {
 
   for (const ev of game.state.events.splice(0)) {
     if (ev.type === 'respawn') showToast('You fell! Back to the top.');
+    if (ev.type === 'trigger' && ev.opened) showToast('Somewhere, a hidden door opens…', 'secret');
   }
 
   const room = game.state.room;
   const label = room ? `Room ${room.id}: ${room.name}` : '';
   if (hudRoom.textContent !== label) hudRoom.textContent = label;
 
-  view.render(p);
+  // What can be used right now ("E: Open door"), and the underwater tint
+  const st = game.state;
+  const promptText = active && st.target ? st.target.label : '';
+  const promptHtml = promptText ? (st.target.kind === 'locked' || touch ? promptText : `<kbd>E</kbd>${promptText}`) : '';
+  if (prompt.innerHTML !== promptHtml) prompt.innerHTML = promptHtml;
+  underwater.classList.toggle('on', !!st.underwater);
+  touch?.setContext({ canUse: st.target && st.target.kind !== 'locked', inWater: p.swimming });
+
+  view.render(p, st);
   map.draw(p, room);
   requestAnimationFrame(frame);
 }

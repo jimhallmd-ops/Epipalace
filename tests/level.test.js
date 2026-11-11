@@ -14,7 +14,8 @@ describe('level file', () => {
     const level = buildLevel(palace);
     for (const r of level.rooms) {
       expect(level.boxes.some((b) => b.kind === 'floor' && b.room === r.id)).toBe(true);
-      expect(level.boxes.some((b) => b.kind === 'ceiling' && b.room === r.id)).toBe(true);
+      // rooms open to the sky have no ceiling
+      expect(level.boxes.some((b) => b.kind === 'ceiling' && b.room === r.id)).toBe(!r.sky);
     }
     expect(level.boxes.filter((b) => b.kind === 'wall').length).toBeGreaterThan(10);
   });
