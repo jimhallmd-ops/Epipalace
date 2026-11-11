@@ -23,6 +23,7 @@ This file is the single source of truth for goals, decisions and progress. Updat
 |---|---|---|
 | 1 | Foundation: level format, hollow rooms, collision + tests, desktop & phone controls, chasm respawn, debug map | **Done** |
 | 1.5 | Map editor at /editor; stairs, ramps, curved walls, pillar grids, different floor heights; proportions review | **Done** |
+| 1.6 | Open air (sky, open sides, railings), platforms, diagonal walls, ladders, water/swimming, real doors, secret doors with levers/plates, rotate rooms 90° | **Done** |
 | 2 | Real layout from the five sketches (entrance, top-left branch, top-right branch, left wing, right wing) | Not started. The owner can now lay it out in the editor; see section 10. |
 | 3+ | Mnemonic objects in the numbered item spots, epidemiology content, polish | Not started |
 
@@ -34,6 +35,12 @@ This file is the single source of truth for goals, decisions and progress. Updat
 - **Hosting:** Netlify builds from GitHub automatically. `netlify.toml` tells Netlify to run
   `npm test && npm run build` and publish `dist/`. **If any test fails, Netlify does not deploy**,
   and the last good version stays live.
+- **Live address:** the site is live at **https://epipalace.netlify.app** (editor: `/editor`).
+  As of Nov 2026, **epipalace.com is not connected yet**: its DNS (at Namecheap) points to Namecheap's
+  parking page. To connect it: in Netlify, Domain management → Add a domain → epipalace.com; in
+  Namecheap, Advanced DNS → replace the `@` and `www` parking records with an **A record `@` → 75.2.60.5**
+  and a **CNAME `www` → epipalace.netlify.app**; then in Netlify, HTTPS → Verify DNS / Provision certificate.
+  Editor drafts are saved per web address, so download palace.js before switching addresses.
 - **Do not reuse** the earlier prototype (the old single `index.html`). It was replaced from scratch.
 
 ### Folder map
@@ -102,6 +109,14 @@ All units are metres. The format is like graph paper seen from above:
 | `curves` | `{ cx: -10, cz: -12, r: 3, start: 210, end: 330, height: 2 }` | Curved walls: centre, radius, drawn **clockwise** from `start` to `end`. `0 → 360` is a full circle. `height` optional. |
 | `pillars` | `{ x: -22, z: 10, w: 12, d: 6, rows: 2, cols: 4, size: 0.6, shape: 'round' }` | A grid of pillars spread evenly over a rectangle. `shape` is `'round'` or `'square'`; `height` optional. |
 | `items` | `{ id: 3, room: 4, x: 12, z: 15 }` | Numbered spots for future mnemonic objects (gold pedestals for now). |
+| room `sky` | `{ id: 10, ..., sky: true }` | Open to the sky: no ceiling; sky and sunlight instead. |
+| room `sides` | `sides: { west: 'railing', east: 'open' }` | Per side: `'wall'` (default), `'open'` (no wall) or `'railing'` (see-through, 1 m high). A shared edge is open if **either** room opens it. Below the higher floor and above the lower ceiling, the wall stays. An open side facing the **outside** of the palace gets an invisible barrier, so nobody can walk off the palace. |
+| doors `leaf` / `opens` / `trigger` | `{ between: [3, 10], leaf: 'swing' }`, `{ between: [9, 11], leaf: 'secret', trigger: 'gallery-lever' }` | `leaf`: `'none'` (open doorway, default), `'swing'`, `'slide'`, `'secret'` (looks exactly like wall, slides down into the floor). `opens`: `'use'` (press E / Use, default) or `'auto'` (opens as you approach). `trigger`: the name of a lever/plate that opens it (required for secret doors; makes other doors locked until then). Doors can't be put on open/railing sides. |
+| `triggers` | `{ name: 'gallery-lever', type: 'lever', x: 31, z: 16.8 }` | `type`: `'lever'` (pull with E / Use) or `'plate'` (1 × 1 m floor plate, step on it). Fires once and its doors stay open. |
+| `walls` (any angle, style) | `{ x1: -18, z1: -15, x2: -15, z2: -18 }`, `{ ..., style: 'railing' }` | Free-standing walls may now run at **any angle**. `style: 'railing'` makes a 1 m see-through railing. Curved walls take `style` too. |
+| `platforms` | `{ x: -13, z: 19, w: 4, d: 4, top: 1.5, railings: ['west', 'south'], under: 'solid' }` | A raised area inside a room. `railings` = which edges get railings; railings **leave a gap automatically** where stairs, a ramp or a ladder arrive. `under: 'open'` makes a 30 cm slab you can walk beneath (top ≥ 2.3 m). |
+| `ladders` | `{ x: -13, z: 21, facing: 'east', top: 1.5 }` | (x, z) is the point on the wall/platform edge the ladder leans on; `facing` = the way you face while climbing. Optional `bottom` (default floor), `w` (width, 0.8). |
+| `water` | `{ x: -21, z: 21, w: 7, d: 6, depth: 2.5 }` | A pool cut into the floor, filled to 15 cm below the floor. Over ~1.4 m deep you swim; shallower you wade. |
 | `spawn` | `{ x: 0, z: 28, facing: 'north' }` | Start position. |
 
 What the builder generates (`build.js`): floors with chasm holes cut out, ceilings, walls (shared
@@ -145,7 +160,13 @@ changed in the editor (click empty space → "Default proportions"). The player-
 A top-down grid editor that reads and writes `palace.js`. Desktop browser recommended.
 
 - **Tools** (left; key in brackets): Select/move (V), Room (R), Doorway (D), Stairs (T), Ramp (A),
-  Chasm (C), Curved wall (U), Straight wall (W), Pillar grid (P), Item spot (I), Start point (O).
+  Chasm (C), Curved wall (U), Wall / railing at any angle (W; hold Shift for straight or 45°), Pillar grid (P),
+  Platform (L), Ladder (K; snaps to the nearest wall or platform edge), Water (Q), Lever / plate (G),
+  Item spot (I), Start point (O).
+- **Room panel**: floor and ceiling height, colour, *Open to the sky*, and each side as wall / open / railing.
+  **⟳ Rotate 90°** turns the room and everything in it a quarter-turn clockwise (doorways may need re-placing).
+- **Doorway panel**: width, height, position, and *Door*: none / swinging / sliding / secret; *Opens*: on E or
+  automatically; *Opened by lever/plate*. A secret door without a lever/plate shows a red problem.
 - **Draw**: drag on the grid (snaps to 0.5 m; 0.25 m or 1 m in the Snap menu). Stairs and ramps:
   drag from the bottom to the top. If the top end leads into a higher room, the stairs climb to its floor.
 - **Edit**: click to select; drag to move (a room moves with everything in it); drag the white squares
@@ -173,14 +194,17 @@ A top-down grid editor that reads and writes `palace.js`. Desktop browser recomm
 | # | Name | Notes |
 |---|---|---|
 | 1 | Entrance | Start point. Floor 1 m lower (−1 m), with a ramp up to Room 2. Item spot 1. |
-| 2 | Central Hall | 5 m ceiling. Hub, with doors to 1, 3, 4, 5 and 7. |
+| 2 | Central Hall | 5 m ceiling. Hub, with doors to 1, 3, 4, 5 and 7 (the door to 7 slides open automatically). |
 | 3 | Left Wing | Two rows of four round pillars. Item spot 2. |
 | 4 | Right Wing | 5 m ceiling, free-standing partition, stairs up to Room 9. Item spot 3. |
 | 5 | Left Corridor | 3 m wide, 3 m ceiling. Leads to 6. |
-| 6 | Top-Left Branch | 6 m ceiling, curved screen wall. Item spot 4. |
+| 6 | Top-Left Branch | 6 m ceiling, curved screen wall, a diagonal wall across its north-west corner. Item spot 4. |
 | 7 | Right Corridor | 3 m wide, 3 m ceiling. Leads to 8. |
 | 8 | Top-Right Branch (chasm) | 2.5 m chasm across the room. Run + jump to cross. Item spot 5. |
-| 9 | Upper Gallery | Floor at 1.8 m, reached by the stairs in Room 4. Item spot 6. |
+| 9 | Upper Gallery | Floor at 1.8 m, a balcony: its west side is a railing over Room 4, with a gap where the stairs arrive. Has the lever that opens the secret door to Room 11. Item spot 6. |
+| 10 | Courtyard | Open to the sky; west side railing, east side open (invisible edge). Swinging door from Room 3. A 2.5 m deep pool, a 1.5 m lookout platform with a ladder and railings, and a floor plate that opens the secret door to Room 12. |
+| 11 | Secret Study | Behind a secret door in Room 9 (lever). Item spot 7. |
+| 12 | Hidden Alcove | Behind a secret door in Room 10 (floor plate). Item spot 8. |
 
 - Item spots have their own numbers (gold), separate from room numbers. The numbers on the sketches
   are item spots (confirmed by the owner); the entrance's numbers mark connections (section 10).
@@ -195,6 +219,9 @@ A top-down grid editor that reads and writes `palace.js`. Desktop browser recomm
 | Run | Shift | Push the joystick all the way out |
 | Look | Mouse (click into the game first). If the browser refuses mouse capture, hold the button and drag. | Right thumb: drag anywhere on the right half |
 | Jump | Space | Jump button |
+| Open doors, pull levers | E (a prompt shows when something can be used) | **Use** button (appears when something can be used) |
+| Ladders | Walk into the ladder to climb; walk off the top facing away to climb down; Space lets go | Same, with the joystick and Jump |
+| Swim | Space = swim up, C = dive | Jump = swim up, **Dive** button (appears in water) |
 | Stairs / ramps | Just walk | Just walk |
 | Debug map | M (off → corner → full screen) | Map button |
 | Free the cursor | Esc (shows the pause screen; click to continue) | n/a |
@@ -216,6 +243,12 @@ A top-down grid editor that reads and writes `palace.js`. Desktop browser recomm
 11. **Tests run on Netlify before every deploy.** Browser tests (`scripts/e2e*.mjs`) run during development, because Netlify's build machines don't have a browser.
 12. **The editor saves files, not the website.** It runs entirely in the browser, with no login and no server. Publishing goes through GitHub, so every layout change still passes the collision tests before going live, and every version is kept in history.
 13. **/editor without the slash** is redirected to /editor/ by a tiny script on the game page, so it works on any host.
+14. **Open sides are all-or-nothing per side** and an edge is open if either room opens it, which keeps the format simple. Outside edges get an invisible barrier: the player can never leave the palace or fall off it (except into chasms, on purpose).
+15. **Doors are the only moving collision.** A closed door adds one box to the world; an opening door removes it at once. A door never closes on the player: if they are in the doorway, it opens again. Swinging doors open into the room on the south/east side.
+16. **Secret doors give nothing away**: same texture and thickness as the wall, no sign, no prompt. Levers and plates fire once and their doors stay open (no puzzles that can lock you out).
+17. **Ladders and water are zones in the physics**, not boxes: in a ladder's zone, walking towards it climbs; in water, gravity gives way to floating, and you can haul yourself out over an edge up to 1.7 m high, so no pool can trap you.
+18. **The palace stands on a lawn** just below its lowest floor, so open sides and the sky look out onto ground rather than empty space.
+19. **Rotate is 90° only**: rooms stay rectangles lined up with north/south/east/west. Angled spaces are made with diagonal and curved walls.
 
 ---
 
@@ -233,10 +266,23 @@ A top-down grid editor that reads and writes `palace.js`. Desktop browser recomm
 - [x] **Tests: 59 unit tests**. On top of Piece 1's: stairs up/down without bouncing, ramp smoothness, pedestal not climbable, too-steep stairs/ramps rejected, curved wall blocks from inside and outside at every angle, every pillar blocks from 4 sides (checked every frame), raised doorways, save → load round trip, room renumbering, moving rooms with contents, door placement, auto respawn. Deliberate breakage confirmed: removing step-up fails 4, removing snap-down fails 1, gaps in a curved wall fail 1, removing one pillar's collision fails 1.
 - [x] **Browser tests**: game 21 checks (walks the ramp and the stairs too); editor 23 checks (draws a room with the mouse, edits the panel, places a doorway, resizes with a handle, adds pillars/curve/item, undo/redo, overlap shows a red problem, Preview opens the game in the new room at the right height, Download, reload restores the draft, Open file, Help)
 
+### Piece 1.6
+- [x] Open air: rooms open to the sky; each side wall / open / railing; invisible edge on outside open sides; sky and lawn
+- [x] Platforms with railing edges (automatic gaps for stairs/ramps/ladders), walk-under platforms; diagonal walls; railing-style walls and curves
+- [x] Ladders (climb up/down, let go); water (float, swim, dive with C, wade, climb out of any pool); underwater tint
+- [x] Real doors (swinging, sliding; open with E/Use or automatically) and secret doors opened by levers or floor plates; "E: Open door" prompts; phone Use and Dive buttons
+- [x] Editor: Platform, Ladder, Water, Lever/plate tools; any-angle walls; room sky/sides; door type/trigger; Rotate 90°; Help updated
+- [x] Placeholder layout shows every feature (rooms 9–12, see section 6)
+- [x] **Tests: 84 unit tests.** New: sky rooms have no ceiling; open outside edge has a barrier; railings block and can't be jumped; balcony railing gap at the stairs; can't walk under a raised room; open side between rooms is passable; platform railing; walk-under platform; diagonal wall blocks at every point and angle; ladder up, down, and not grabbed when walking past; floating, diving and resurfacing, climbing out, shallow wading; swing door blocks/opens/closes; door never closes on the player; automatic sliding door; secret door blocks with no prompt and opens by lever; plate opens its door; rotate 90° (and back after 4 turns); ladder snapping; validation messages. Deliberate breakage confirmed for barriers, railings, diagonal walls, ladders, swimming, door collision and door safety.
+- [x] **Browser tests**: game 30 checks (adds: door prompt, closed door blocks, E opens it, ladder climb, floating, diving tint, lever prompt, secret door opens and is walkable); editor 36 checks (adds: platform, railing tick-box, ladder snap, water, 45° wall, lever, secret door needs/accepts a trigger, sky + railing side, Rotate 90° and undo)
+- [x] Fixed along the way: shallow pools could trap the player; secret doors showed a slightly different colour; the Courtyard's open side accidentally opened into Room 2; floor numbers could float over water; Ctrl was briefly mapped to "dive" (Ctrl+W closes the tab), now C only
+
 ### Known limitations / next steps
 - The layout is still a **placeholder**: Piece 2 builds the real one from the sketches (the owner may draft it in the editor).
 - The editor is built for a desktop browser. It works on a tablet, but not comfortably on a phone.
-- No rooms stacked above other rooms (bridges, balconies). No sloped/angled straight walls (use curves).
+- No rooms stacked directly above other rooms (use platforms, including walk-under platforms, for mezzanines and bridges).
+- Rooms rotate in 90° steps only; doors can't be placed on open or railing sides.
+- epipalace.com is not connected to Netlify yet (see section 2); the site is live at epipalace.netlify.app.
 - No sound, no mnemonic objects yet. Item spots are plain pedestals.
 
 ---

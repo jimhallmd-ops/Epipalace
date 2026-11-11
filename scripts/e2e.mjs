@@ -176,7 +176,11 @@ try {
   await place(6, -12, -Math.PI / 2);
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${OUT}/05-chasm.png` });
-  await hold('KeyW', 2500);
+  // walk until we fall in and are sent back, then let go of W (or we would walk in again)
+  await page.keyboard.down('KeyW');
+  for (let i = 0; i < 40 && (await P()).respawns < 1; i++) await page.waitForTimeout(100);
+  await page.keyboard.up('KeyW');
+  await page.waitForTimeout(300);
   p = await P();
   check(p.respawns >= 1 && p.room === 8 && Math.abs(p.y) < 0.01, `falling into the chasm respawns at the top (respawns ${p.respawns}, room ${p.room})`);
   await page.waitForTimeout(100);

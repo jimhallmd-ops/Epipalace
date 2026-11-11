@@ -2,7 +2,8 @@
 import { rectContains, sharedEdge, compassPoint, arcSweep, DIRECTIONS } from '../level/geometry.js';
 import { DEFAULTS } from '../level/validate.js';
 
-export const SECTIONS = ['rooms', 'doors', 'chasms', 'walls', 'stairs', 'ramps', 'curves', 'pillars', 'items'];
+export const SECTIONS = ['rooms', 'doors', 'triggers', 'chasms', 'water', 'walls', 'stairs', 'ramps', 'platforms', 'ladders', 'curves', 'pillars', 'items'];
+const CONTENT_TYPES = ['chasms', 'water', 'walls', 'stairs', 'ramps', 'platforms', 'ladders', 'curves', 'pillars', 'items', 'triggers'];
 
 export const ROOM_COLORS = ['#f2e2b8', '#cfe6d2', '#d6dcf5', '#f5d6dc', '#d2ecef', '#efe0f5', '#e3f0d0', '#f7e3cc', '#dfe3e8', '#e8d8f0'];
 
@@ -19,7 +20,7 @@ export function normalize(data) {
 /** Drops empty optional sections so the saved file stays tidy. */
 export function tidy(data) {
   const out = structuredClone(data);
-  for (const k of ['chasms', 'walls', 'stairs', 'ramps', 'curves', 'pillars', 'items']) {
+  for (const k of CONTENT_TYPES) {
     if (Array.isArray(out[k]) && out[k].length === 0) delete out[k];
   }
   return out;
@@ -49,12 +50,16 @@ export function anchor(type, o) {
     case 'stairs':
     case 'ramps':
     case 'pillars':
+    case 'platforms':
+    case 'water':
       return { x: o.x + o.w / 2, z: o.z + o.d / 2 };
     case 'walls':
       return { x: (o.x1 + o.x2) / 2, z: (o.z1 + o.z2) / 2 };
     case 'curves':
       return { x: o.cx, z: o.cz };
     case 'items':
+    case 'ladders':
+    case 'triggers':
       return { x: o.x, z: o.z };
     default:
       return null;
@@ -84,7 +89,7 @@ export function moveObject(type, o, dx, dz) {
 /** Moves a room together with everything inside it (stairs, items, pillars, ...). */
 export function moveRoomWithContents(data, room, dx, dz) {
   const before = { ...room };
-  for (const type of ['chasms', 'walls', 'stairs', 'ramps', 'curves', 'pillars', 'items']) {
+  for (const type of CONTENT_TYPES) {
     for (const o of data[type]) {
       const a = anchor(type, o);
       if (a && inside(before, a.x, a.z)) moveObject(type, o, dx, dz);
@@ -224,3 +229,74 @@ export function slopeInfo(data, st, kind) {
 }
 
 export { DIRECTIONS };
+
+// ---------------------------------------------------------------------------------------------
+// Rotating a room a quarter-turn clockwise (as seen on the map), with everything inside it
+// ---------------------------------------------------------------------------------------------
+const CW = { north: 'east', east: 'south', south: 'west', west: 'north' };
+const turnFacing = (f) => (typeof f === 'number' ? (f + 90) % 360 : CW[f ?? 'north']);
+
+export function rotateRoom90(data, room) {
+  const cx = room.x + room.w / 2;
+  const cz = room.z + room.d / 2;
+  const before = { ...room };
+  const P = (x, z) => ({ x: r3(cx - (z - cz)), z: r3(cz + (x - cx)) }); // clockwise on the map
+  const R = (o) => {
+    const a = P(o.x, o.z);
+    const b = P(o.x + o.w, o.z + o.d);
+    return { x: Math.min(a.x, b.x), z: Math.min(a.z, b.z), w: o.d, d: o.w };
+  };
+  for (const type of CONTENT_TYPES) {
+    for (const o of data[type]) {
+      const a = anchor(type, o);
+      if (!a || !inside(before, a.x, a.z)) continue;
+      if (['chasms', 'water', 'stairs', 'ramps', 'platforms', 'pillars'].includes(type)) {
+        Object.assign(o, R(o));
+        if (o.up) o.up = CW[o.up];
+        if (type === 'pillars') [o.rows, o.cols] = [o.cols, o.rows];
+        if (o.railings) o.railings = o.railings.map((sd) => CW[sd]);
+        if (o.respawn) Object.assign(o.respawn, P(o.respawn.x, o.respawn.z), { facing: turnFacing(o.respawn.facing) });
+      } else if (type === 'walls') {
+        const a1 = P(o.x1, o.z1);
+        const a2 = P(o.x2, o.z2);
+        Object.assign(o, { x1: a1.x, z1: a1.z, x2: a2.x, z2: a2.z });
+      } else if (type === 'curves') {
+        Object.assign(o, (({ x, z }) => ({ cx: x, cz: z }))(P(o.cx, o.cz)));
+        o.start = (o.start + 90) % 360;
+        o.end = (o.end + 90) % 360;
+      } else {
+        Object.assign(o, P(o.x, o.z));
+        if (o.facing) o.facing = turnFacing(o.facing);
+      }
+    }
+  }
+  if (inside(before, data.spawn.x, data.spawn.z)) Object.assign(data.spawn, P(data.spawn.x, data.spawn.z), { facing: turnFacing(data.spawn.facing) });
+  if (room.sides) room.sides = Object.fromEntries(Object.entries(room.sides).map(([k, v]) => [CW[k], v]));
+  Object.assign(room, { x: r3(cx - room.d / 2), z: r3(cz - room.w / 2), w: room.d, d: room.w });
+}
+const r3 = (v) => Math.round(v * 1000) / 1000;
+
+/**
+ * Where a ladder clicked at (x, z) should go: on the nearest room wall or platform edge
+ * (within 1.2 m), facing it. Returns { x, z, facing, top } or null.
+ */
+export function ladderSpotAt(data, x, z) {
+  const room = roomAt(data, x, z);
+  if (!room) return null;
+  const t = data.defaults.wallThickness / 2;
+  const cands = [];
+  const edgesOf = (o, inner, topFor) => {
+    // inner: the ladder stands inside the rectangle (room walls); otherwise outside (platform edges)
+    const s = inner ? 1 : -1;
+    cands.push({ d: Math.abs(z - o.z), x, z: o.z + s * (inner ? t : 0), facing: inner ? 'north' : 'south', top: topFor, along: [o.x, o.x + o.w], v: x });
+    cands.push({ d: Math.abs(z - (o.z + o.d)), x, z: o.z + o.d - s * (inner ? t : 0), facing: inner ? 'south' : 'north', top: topFor, along: [o.x, o.x + o.w], v: x });
+    cands.push({ d: Math.abs(x - o.x), x: o.x + s * (inner ? t : 0), z, facing: inner ? 'west' : 'east', top: topFor, along: [o.z, o.z + o.d], v: z });
+    cands.push({ d: Math.abs(x - (o.x + o.w)), x: o.x + o.w - s * (inner ? t : 0), z, facing: inner ? 'east' : 'west', top: topFor, along: [o.z, o.z + o.d], v: z });
+  };
+  for (const pf of data.platforms) if (roomAt(data, pf.x + pf.w / 2, pf.z + pf.d / 2) === room) edgesOf(pf, false, pf.top);
+  edgesOf(room, true, r3((room.floor ?? 0) + 3));
+  const ok = cands.filter((c) => c.d <= 1.2 && c.v >= c.along[0] + 0.4 && c.v <= c.along[1] - 0.4).sort((a, b) => a.d - b.d);
+  if (!ok.length) return null;
+  const c = ok[0];
+  return { x: r3(c.x), z: r3(c.z), facing: c.facing, top: c.top };
+}

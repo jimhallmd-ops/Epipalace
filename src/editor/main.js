@@ -69,8 +69,12 @@ const TOOLS = [
   { id: 'ramp', key: 'A', ico: '◢', label: 'Ramp', hint: 'Drag from the BOTTOM of the ramp to the TOP. Then set the top height in the panel.' },
   { id: 'chasm', key: 'C', ico: '▩', label: 'Chasm', hint: 'Drag to cut a hole in a room floor. A green respawn point (R) is placed for you; drag it to move it.' },
   { id: 'curve', key: 'U', ico: '◠', label: 'Curved wall', hint: 'Press at the CENTRE of the curve and drag outwards: distance sets the radius, direction sets which way it bulges.' },
-  { id: 'wall', key: 'W', ico: '▏', label: 'Straight wall', hint: 'Drag to draw a free-standing wall inside a room (straight north-south or east-west).' },
+  { id: 'wall', key: 'W', ico: '╱', label: 'Wall / railing', hint: 'Drag to draw a free-standing wall at any angle (hold Shift to keep it straight or at 45°). Switch its style to "railing" in the panel.' },
   { id: 'pillars', key: 'P', ico: '⁘', label: 'Pillar grid', hint: 'Drag a rectangle; pillars are spread evenly inside it. Set rows, columns and size in the panel.' },
+  { id: 'platform', key: 'L', ico: '▤', label: 'Platform', hint: 'Drag a raised area inside a room. Set its height and which edges get railings in the panel. Reach it with stairs, a ramp or a ladder.' },
+  { id: 'ladder', key: 'K', ico: '☷', label: 'Ladder', hint: 'Click next to a wall or platform edge: the ladder snaps to it. Set the top height in the panel.' },
+  { id: 'water', key: 'Q', ico: '≈', label: 'Water', hint: 'Drag to make a pool in a room floor. Set its depth in the panel (over 1.4 m = swimming).' },
+  { id: 'trigger', key: 'G', ico: '⚙', label: 'Lever / plate', hint: 'Click to place a lever (pull with E) or a floor plate (step on it). Then pick it as the trigger of a secret door.' },
   { id: 'item', key: 'I', ico: '★', label: 'Item spot', hint: 'Click to place a numbered spot for a mnemonic object.' },
   { id: 'spawn', key: 'O', ico: '⚑', label: 'Start point', hint: 'Click where the player should start. Set the facing direction in the panel.' },
 ];
@@ -198,7 +202,7 @@ function selectedObject() {
   if (selection.type === 'respawn') return data.chasms[selection.index]?.respawn;
   return data[selection.type]?.[selection.index] ?? null;
 }
-const RECT_TYPES = new Set(['rooms', 'chasms', 'stairs', 'ramps', 'pillars']);
+const RECT_TYPES = new Set(['rooms', 'chasms', 'stairs', 'ramps', 'pillars', 'platforms', 'water']);
 
 function pillarPositions(pg) {
   const out = [];
@@ -214,6 +218,8 @@ function hitTest(p) {
   if (near(data.spawn.x, data.spawn.z, Math.max(tol, 0.6))) return { type: 'spawn' };
   for (const [i, c] of data.chasms.entries()) if (c.respawn && near(c.respawn.x, c.respawn.z, Math.max(tol, 0.5))) return { type: 'respawn', index: i };
   for (const [i, it] of data.items.entries()) if (near(it.x, it.z, Math.max(tol, 0.5))) return { type: 'items', index: i };
+  for (const [i, tr] of data.triggers.entries()) if (near(tr.x, tr.z, Math.max(tol, 0.5))) return { type: 'triggers', index: i };
+  for (const [i, l] of data.ladders.entries()) if (near(l.x, l.z, Math.max(tol, 0.5))) return { type: 'ladders', index: i };
   for (const [i, d] of data.doors.entries()) {
     const g = M.doorGeometry(data, d);
     if (!g || g.broken) continue;
@@ -222,10 +228,11 @@ function hitTest(p) {
     if (along >= g.from - 0.1 && along <= g.to + 0.1 && Math.abs(across - g.edge.line) <= Math.max(tol, 0.45)) return { type: 'doors', index: i };
   }
   for (const [i, pg] of data.pillars.entries()) if (inRect(pg)) return { type: 'pillars', index: i };
-  for (const type of ['stairs', 'ramps']) for (const [i, st] of data[type].entries()) if (inRect(st)) return { type, index: i };
+  for (const type of ['stairs', 'ramps', 'platforms']) for (const [i, st] of data[type].entries()) if (inRect(st)) return { type, index: i };
   for (const [i, c] of data.curves.entries()) if (M.distanceToCurve(c, p.x, p.z) <= tol) return { type: 'curves', index: i };
   for (const [i, w] of data.walls.entries()) if (M.distanceToSegment(p.x, p.z, w.x1, w.z1, w.x2, w.z2) <= tol) return { type: 'walls', index: i };
   for (const [i, c] of data.chasms.entries()) if (inRect(c)) return { type: 'chasms', index: i };
+  for (const [i, c] of data.water.entries()) if (inRect(c)) return { type: 'water', index: i };
   for (let i = data.rooms.length - 1; i >= 0; i--) if (inRect(data.rooms[i])) return { type: 'rooms', index: i };
   return null;
 }
@@ -283,7 +290,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (tool === 'select') {
     const h = handleAt(p);
     if (h) {
-      drag = { kind: 'handle', id: h.id, orig: structuredClone(selectedObject()), start: p };
+      drag = { kind: 'handle', id: h.id, orig: structuredClone(selectedObject()), start: p, shift: e.shiftKey };
       return;
     }
     const hit = hitTest(p);
@@ -311,7 +318,9 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   // Drag-to-create tools
-  drag = { kind: 'create', start: sp, now: sp };
+  if (tool === 'ladder') return placeLadder(p);
+  if (tool === 'trigger') return placeTrigger(sp);
+  drag = { kind: 'create', start: sp, now: sp, shift: e.shiftKey };
 });
 
 canvas.addEventListener('pointermove', (e) => {
@@ -329,8 +338,10 @@ canvas.addEventListener('pointermove', (e) => {
   } else if (drag.kind === 'move') {
     moveSelection(p);
   } else if (drag.kind === 'handle') {
+    drag.shift = e.shiftKey;
     dragHandle(p);
   } else if (drag.kind === 'create') {
+    drag.shift = e.shiftKey;
     drag.now = { x: snap(p.x), z: snap(p.z) };
     drag.raw = p;
   }
@@ -382,6 +393,18 @@ function moveSelection(p) {
   } else M.moveObject(t, o, dx, dz);
 }
 
+/** Keeps a line from `a` to `b` straight (north-south / east-west) or at 45°. */
+function lock45(a, b) {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const ang = Math.round(Math.atan2(dz, dx) / (Math.PI / 4)) * (Math.PI / 4);
+  const len = Math.hypot(dx, dz);
+  const ux = Math.round(Math.cos(ang) * 1000) / 1000;
+  const uz = Math.round(Math.sin(ang) * 1000) / 1000;
+  const k = ux && uz ? snap(len / Math.SQRT2) : snap(len);
+  return { x: r3(a.x + Math.sign(ux) * k), z: r3(a.z + Math.sign(uz) * k) };
+}
+
 function dragHandle(p) {
   const o = selectedObject();
   const t = selection.type;
@@ -400,10 +423,9 @@ function dragHandle(p) {
     Object.assign(o, { x: r3(x0), z: r3(z0), w: r3(x1 - x0), d: r3(z1 - z0) });
   } else if (t === 'walls') {
     const other = drag.id === 'p1' ? { x: o.x2, z: o.z2 } : { x: o.x1, z: o.z1 };
-    const horizontal = Math.abs(sp.x - other.x) >= Math.abs(sp.z - other.z);
-    const np = horizontal ? { x: sp.x, z: other.z } : { x: other.x, z: sp.z };
-    if (drag.id === 'p1') Object.assign(o, { x1: np.x, z1: np.z, x2: other.x, z2: other.z });
-    else Object.assign(o, { x2: np.x, z2: np.z, x1: other.x, z1: other.z });
+    const np = drag.shift ? lock45(other, sp) : sp;
+    if (drag.id === 'p1') Object.assign(o, { x1: np.x, z1: np.z });
+    else Object.assign(o, { x2: np.x, z2: np.z });
   } else if (t === 'curves') {
     const ang = Math.round(M.compassAngle(o.cx, o.cz, p.x, p.z) / 5) * 5 % 360;
     if (drag.id === 'start') o.start = ang;
@@ -461,10 +483,19 @@ function finishCreate(d) {
     return added('pillars', { ...r, rows: Math.max(1, Math.round(r.d / 3)), cols: Math.max(1, Math.round(r.w / 3)), size: 0.6, shape: 'round' });
   }
   if (tool === 'wall') {
-    const horizontal = Math.abs(dx) >= Math.abs(dz);
-    const w = horizontal ? { x1: Math.min(d.start.x, d.now.x), z1: d.start.z, x2: Math.max(d.start.x, d.now.x), z2: d.start.z } : { x1: d.start.x, z1: Math.min(d.start.z, d.now.z), x2: d.start.x, z2: Math.max(d.start.z, d.now.z) };
-    if (Math.abs(w.x2 - w.x1) + Math.abs(w.z2 - w.z1) < 0.5) return setHint('Drag a longer line to draw a wall.', true);
+    const end = d.shift ? lock45(d.start, d.now) : d.now;
+    const w = { x1: d.start.x, z1: d.start.z, x2: end.x, z2: end.z };
+    if (Math.hypot(w.x2 - w.x1, w.z2 - w.z1) < 0.5) return setHint('Drag a longer line to draw a wall.', true);
     return added('walls', w);
+  }
+  if (tool === 'platform') {
+    if (tooSmall(1)) return setHint('Drag a bigger area (at least 1 m × 1 m) for a platform.', true);
+    const room = M.roomAt(data, r.x + r.w / 2, r.z + r.d / 2);
+    return added('platforms', { ...r, top: r3((room?.floor ?? 0) + 1.5), railings: [] });
+  }
+  if (tool === 'water') {
+    if (tooSmall(1)) return setHint('Drag a bigger area (at least 1 m × 1 m) for water.', true);
+    return added('water', { ...r, depth: 2 });
   }
   if (tool === 'curve') {
     const raw = d.raw || d.now;
@@ -486,6 +517,17 @@ function placeDoor(p) {
   const off = r3(Math.max(-max, Math.min(max, snap(spot.offset))));
   if (off) door.offset = off;
   added('doors', door);
+}
+function placeLadder(p) {
+  const spot = M.ladderSpotAt(data, p.x, p.z);
+  if (!spot) return setHint('Ladders go right next to a wall or a platform edge: click within about 1 m of one.', true);
+  added('ladders', { x: spot.x, z: spot.z, facing: spot.facing, top: spot.top });
+}
+function placeTrigger(p) {
+  if (!M.roomAt(data, p.x, p.z)) return setHint('Levers and plates go inside a room.', true);
+  let n = data.triggers.length + 1;
+  while (data.triggers.some((t) => t.name === `trigger-${n}`)) n++;
+  added('triggers', { name: `trigger-${n}`, type: 'lever', x: p.x, z: p.z });
 }
 function placeItem(p) {
   const room = M.roomAt(data, p.x, p.z);
@@ -614,6 +656,42 @@ function draw() {
       dot(rx, rz, Math.max(7, 0.4 * s), '#2a9d8f', 'R', '#fff');
     }
   }
+  // water
+  for (const w of data.water) {
+    const [x0, z0, ww, dd] = rect(w);
+    ctx.fillStyle = 'rgba(79,163,217,0.75)';
+    ctx.fillRect(x0, z0, ww, dd);
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = 1;
+    for (let k2 = 6; k2 < dd; k2 += 10) {
+      ctx.beginPath();
+      for (let xx = 0; xx <= ww; xx += 6) ctx.lineTo(x0 + xx, z0 + k2 + Math.sin(xx / 5) * 1.5);
+      ctx.stroke();
+    }
+    if (ww > 60 && dd > 24) label(`water ${w.depth} m deep`, x0 + ww / 2, z0 + dd / 2, 11, '#0b3c5d');
+  }
+  // platforms (with their railing edges)
+  for (const pf of data.platforms) {
+    const [x0, z0, ww, dd] = rect(pf);
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillRect(x0, z0, ww, dd);
+    ctx.strokeStyle = 'rgba(29,43,62,0.55)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x0, z0, ww, dd);
+    ctx.strokeStyle = '#5b6470';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([4, 3]);
+    const E = { north: [x0, z0, x0 + ww, z0], south: [x0, z0 + dd, x0 + ww, z0 + dd], west: [x0, z0, x0, z0 + dd], east: [x0 + ww, z0, x0 + ww, z0 + dd] };
+    for (const sd of pf.railings || []) {
+      const [a, b, c2, d2] = E[sd];
+      ctx.beginPath();
+      ctx.moveTo(a, b);
+      ctx.lineTo(c2, d2);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    if (ww > 50 && dd > 24) label(`platform ↑ ${pf.top} m`, x0 + ww / 2, z0 + dd / 2, 11, '#1d2b3e');
+  }
   // pillars
   for (const pg of data.pillars) {
     const size = (pg.size ?? 0.6) * s;
@@ -626,21 +704,59 @@ function draw() {
       ctx.fill();
     }
   }
-  // room walls (centred on each edge, like in the game)
+  // room walls (centred on each edge, like in the game); open sides dashed, railings dotted
+  for (const r of data.rooms) {
+    const [x0, z0, w, d] = rect(r);
+    const E = { north: [x0, z0, x0 + w, z0], south: [x0, z0 + d, x0 + w, z0 + d], west: [x0, z0, x0, z0 + d], east: [x0 + w, z0, x0 + w, z0 + d] };
+    for (const [side, [a, b, c2, d2]] of Object.entries(E)) {
+      const mode = r.sides?.[side] ?? 'wall';
+      ctx.beginPath();
+      ctx.moveTo(a, b);
+      ctx.lineTo(c2, d2);
+      if (mode === 'wall') {
+        ctx.strokeStyle = '#1d2b3e';
+        ctx.lineWidth = Math.max(1.5, t * s);
+        ctx.setLineDash([]);
+      } else if (mode === 'railing') {
+        ctx.strokeStyle = '#5b6470';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([4, 3]);
+      } else {
+        ctx.strokeStyle = '#2a9d8f';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([8, 6]);
+      }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    if (r.sky && w > 40) label('☀ open sky', x0 + w / 2, z0 + 12, 11, '#b26a00');
+  }
   ctx.strokeStyle = '#1d2b3e';
   ctx.lineWidth = Math.max(1.5, t * s);
-  for (const r of data.rooms) ctx.strokeRect(...rect(r));
   // free walls and curves
   ctx.lineCap = 'butt';
   for (const w of data.walls) {
     const [a, b] = W2S(w.x1, w.z1);
     const [c2, d2] = W2S(w.x2, w.z2);
+    ctx.save();
+    if (w.style === 'railing') {
+      ctx.strokeStyle = '#5b6470';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([4, 3]);
+    }
     ctx.beginPath();
     ctx.moveTo(a, b);
     ctx.lineTo(c2, d2);
     ctx.stroke();
+    ctx.restore();
   }
   for (const c of data.curves) {
+    ctx.save();
+    if (c.style === 'railing') {
+      ctx.strokeStyle = '#5b6470';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([4, 3]);
+    }
     const [cx, cz] = W2S(c.cx, c.cz);
     const sweep = arcSweep(c.start, c.end);
     // compass angle -> canvas angle: canvas 0 = east, clockwise; compass 0 = north, clockwise
@@ -649,6 +765,7 @@ function draw() {
     ctx.beginPath();
     ctx.arc(cx, cz, c.r * s, a0, a1);
     ctx.stroke();
+    ctx.restore();
   }
   // doors: gaps in the walls
   for (const [i, dr] of data.doors.entries()) {
@@ -669,14 +786,41 @@ function draw() {
       continue;
     }
     const sel = selection?.type === 'doors' && selection.index === i;
-    ctx.fillStyle = sel ? '#1e6bff' : '#ffffff';
+    const leaf = dr.leaf ?? 'none';
+    ctx.fillStyle = sel ? '#1e6bff' : leaf === 'secret' ? '#f3c4c4' : '#ffffff';
     const half = Math.max(2, (t * s) / 2 + 1);
-    if (g.edge.orient === 'h') {
-      const [x0, z0] = W2S(g.from, g.edge.line);
-      ctx.fillRect(x0, z0 - half, g.width * s, half * 2);
-    } else {
-      const [x0, z0] = W2S(g.edge.line, g.from);
-      ctx.fillRect(x0 - half, z0, half * 2, g.width * s);
+    const [hx, hz] = g.edge.orient === 'h' ? W2S(g.from, g.edge.line) : W2S(g.edge.line, g.from);
+    if (g.edge.orient === 'h') ctx.fillRect(hx, hz - half, g.width * s, half * 2);
+    else ctx.fillRect(hx - half, hz, half * 2, g.width * s);
+    // door leaf symbols: swing = quarter circle, slide = parallel line, secret = "S"
+    ctx.strokeStyle = leaf === 'secret' ? '#c62828' : '#8a5a35';
+    ctx.lineWidth = 1.5;
+    const L = g.width * s;
+    if (leaf === 'swing') {
+      ctx.beginPath();
+      if (g.edge.orient === 'h') {
+        ctx.moveTo(hx, hz);
+        ctx.lineTo(hx, hz + L);
+        ctx.arc(hx, hz, L, Math.PI / 2, 0, true);
+      } else {
+        ctx.moveTo(hx, hz);
+        ctx.lineTo(hx + L, hz);
+        ctx.arc(hx, hz, L, 0, Math.PI / 2);
+      }
+      ctx.stroke();
+    } else if (leaf === 'slide') {
+      ctx.beginPath();
+      if (g.edge.orient === 'h') {
+        ctx.moveTo(hx, hz + half + 2);
+        ctx.lineTo(hx + L, hz + half + 2);
+      } else {
+        ctx.moveTo(hx + half + 2, hz);
+        ctx.lineTo(hx + half + 2, hz + L);
+      }
+      ctx.stroke();
+    } else if (leaf === 'secret') {
+      const [mx, mz] = g.edge.orient === 'h' ? W2S(g.centre, g.edge.line) : W2S(g.edge.line, g.centre);
+      label(`secret ⟵ ${dr.trigger || '?'}`, mx, mz - 12, 10, '#c62828', true);
     }
   }
   // room labels
@@ -690,6 +834,41 @@ function draw() {
       const h = r.height ?? data.defaults.height;
       label(`floor ${floor} m · ceiling ${r3(floor + h)} m`, x0 + w / 2, z0 + d / 2 + big * 0.55 + 15, 11, '#5e6b7d');
     }
+  }
+  // ladders: a short brown ladder symbol against its wall, facing it
+  for (const l of data.ladders) {
+    const [x, z] = W2S(l.x, l.z);
+    const [fx, fz] = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] }[l.facing] || [0, -1];
+    const w = (l.w ?? 0.8) * s;
+    const depth = Math.max(6, 0.4 * s);
+    ctx.save();
+    ctx.translate(x, z);
+    ctx.rotate(Math.atan2(fz, fx) + Math.PI / 2);
+    ctx.fillStyle = '#a0743f';
+    ctx.fillRect(-w / 2, 0, w, depth);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    for (let k2 = 1; k2 < 4; k2++) {
+      ctx.beginPath();
+      ctx.moveTo(-w / 2, (k2 * depth) / 4);
+      ctx.lineTo(w / 2, (k2 * depth) / 4);
+      ctx.stroke();
+    }
+    ctx.restore();
+    label(`ladder ↑ ${l.top} m`, x - fx * 18, z - fz * 18 - 4, 10, '#7a5222');
+  }
+  // levers and plates
+  for (const tr of data.triggers) {
+    const [x, z] = W2S(tr.x, tr.z);
+    if (tr.type === 'plate') {
+      const k2 = Math.max(8, 0.5 * s);
+      ctx.fillStyle = '#c9bc9c';
+      ctx.strokeStyle = '#7a6a48';
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(x - k2, z - k2, k2 * 2, k2 * 2);
+      ctx.strokeRect(x - k2, z - k2, k2 * 2, k2 * 2);
+    } else dot(x, z, Math.max(7, 0.35 * s), '#c0392b', 'L', '#fff');
+    label(tr.name, x, z + Math.max(14, 0.6 * s), 10, '#7a2a1e', true);
   }
   // items + spawn
   for (const it of data.items) {
@@ -767,11 +946,12 @@ function draw() {
     const a = drag.start;
     const b = drag.now;
     if (tool === 'wall') {
-      const horizontal = Math.abs(b.x - a.x) >= Math.abs(b.z - a.z);
+      const end = drag.shift ? lock45(a, b) : b;
       ctx.beginPath();
       ctx.moveTo(...W2S(a.x, a.z));
-      ctx.lineTo(...W2S(horizontal ? b.x : a.x, horizontal ? a.z : b.z));
+      ctx.lineTo(...W2S(end.x, end.z));
       ctx.stroke();
+      label(`${r3(Math.hypot(end.x - a.x, end.z - a.z))} m`, ...W2S((a.x + end.x) / 2, (a.z + end.z) / 2), 12, '#1e6bff', true);
     } else if (tool === 'curve') {
       const raw = drag.raw || b;
       const rr = snap(Math.hypot(raw.x - a.x, raw.z - a.z));
@@ -861,6 +1041,19 @@ const SCHEMAS = {
       opt('floor', 'Floor height (m)', '0', { rec: 'Raise or lower a whole room. Connect different heights with stairs or a ramp.' }),
       opt('height', 'Ceiling height above floor (m)', () => String(data.defaults.height), { rec: 'Recommended: 3–3.5 ordinary room, 3 corridor, 5–8 grand hall.' }),
       { key: 'color', label: 'Floor colour', kind: 'color' },
+      { key: 'sky', label: 'Open to the sky (no ceiling)', kind: 'check' },
+      ...['north', 'east', 'south', 'west'].map((side) => ({
+        key: `sides.${side}`,
+        label: `${side[0].toUpperCase() + side.slice(1)} side`,
+        kind: 'select',
+        optional: true,
+        default: 'wall',
+        options: [
+          ['wall', 'wall'],
+          ['open', 'open (no wall)'],
+          ['railing', 'railing'],
+        ],
+      })),
     ],
     info: (o) => {
       const floor = o.floor ?? 0;
@@ -875,15 +1068,39 @@ const SCHEMAS = {
       opt('width', 'Width (m)', () => String(data.defaults.doorWidth), { rec: 'Recommended 1.2 m (wide, comfortable). 0.9 m feels tight.' }),
       opt('height', 'Height (m)', () => String(data.defaults.doorHeight), { rec: 'Recommended 2.4 m.' }),
       opt('offset', 'Slide along the wall (m)', '0', { rec: 'Or drag the doorway along its wall.' }),
+      {
+        key: 'leaf',
+        label: 'Door',
+        kind: 'select',
+        optional: true,
+        default: 'none',
+        options: [
+          ['none', 'none (open doorway)'],
+          ['swing', 'swinging door'],
+          ['slide', 'sliding door'],
+          ['secret', 'secret door (looks like wall)'],
+        ],
+      },
+      { key: 'opens', label: 'Opens', kind: 'select', optional: true, default: 'use', options: [['use', 'when you press E / Use'], ['auto', 'automatically as you approach']] },
+      { key: 'trigger', label: 'Opened by lever/plate', kind: 'select', optional: true, options: () => [['', '—'], ...data.triggers.map((t) => [t.name, `${t.name} (${t.type ?? 'lever'})`])] },
     ],
     info: (o) => {
       const a = data.rooms.find((r) => r.id === o.between[0]);
       const b = data.rooms.find((r) => r.id === o.between[1]);
       if (!a || !b) return 'One of the rooms no longer exists.';
+      const leafNote =
+        o.leaf === 'secret'
+          ? `<b>Secret door</b>: looks like wall and opens only when its lever/plate is used${o.trigger ? '' : ' (<b>pick one above</b>, or add one with the Lever / plate tool)'}.<br>`
+          : o.leaf && o.leaf !== 'none'
+            ? (o.trigger ? 'Locked until its lever/plate is used.<br>' : '')
+            : '';
       const diff = Math.abs((a.floor ?? 0) - (b.floor ?? 0));
-      return diff > 0.35
-        ? `The floors differ by <b>${r3(diff)} m</b>. The doorway sits at the higher floor, so add <b>stairs or a ramp</b> on the lower side leading up to it.`
-        : 'Both rooms are at the same height.';
+      return (
+        leafNote +
+        (diff > 0.35
+          ? `The floors differ by <b>${r3(diff)} m</b>. The doorway sits at the higher floor, so add <b>stairs or a ramp</b> on the lower side leading up to it.`
+          : 'Both rooms are at the same height.')
+      );
     },
   },
   stairs: {
@@ -903,13 +1120,53 @@ const SCHEMAS = {
   },
   curves: {
     title: () => 'Curved wall',
-    fields: () => [num('cx', 'Centre x (m)'), num('cz', 'Centre z (m)'), num('r', 'Radius (m)'), num('start', 'Start angle (° from north)'), num('end', 'End angle (° from north)'), opt('height', 'Height (m)', 'to ceiling')],
+    fields: () => [{ key: 'style', label: 'Style', kind: 'select', optional: true, default: 'solid', options: [['solid', 'solid wall'], ['railing', 'see-through railing (1 m)']] }, num('cx', 'Centre x (m)'), num('cz', 'Centre z (m)'), num('r', 'Radius (m)'), num('start', 'Start angle (° from north)'), num('end', 'End angle (° from north)'), opt('height', 'Height (m)', 'to ceiling')],
     info: (o) => `Goes clockwise from ${o.start}° to ${o.end}° (${arcSweep(o.start, o.end)}° of a circle). 0° = north, 90° = east. Use 0 → 360 for a full circle. Drag the white squares to reshape.`,
   },
   walls: {
-    title: () => 'Straight wall',
-    fields: () => [num('x1', 'Start x (m)'), num('z1', 'Start z (m)'), num('x2', 'End x (m)'), num('z2', 'End z (m)'), opt('height', 'Height (m)', 'to ceiling')],
-    info: (o) => `Length ${r3(Math.hypot(o.x2 - o.x1, o.z2 - o.z1))} m. Walls run straight north–south or east–west; use a curved wall for anything else.`,
+    title: (o) => (o.style === 'railing' ? 'Railing' : 'Wall'),
+    fields: () => [
+      { key: 'style', label: 'Style', kind: 'select', optional: true, default: 'solid', options: [['solid', 'solid wall'], ['railing', 'see-through railing (1 m)']] },
+      num('x1', 'Start x (m)'),
+      num('z1', 'Start z (m)'),
+      num('x2', 'End x (m)'),
+      num('z2', 'End z (m)'),
+      opt('height', 'Height (m)', 'to ceiling'),
+    ],
+    info: (o) => `Length ${r3(Math.hypot(o.x2 - o.x1, o.z2 - o.z1))} m, at ${Math.round(M.compassAngle(o.x1, o.z1, o.x2, o.z2))}° from north. Any angle works; hold Shift while dragging an end to keep it straight or at 45°.`,
+  },
+  platforms: {
+    title: () => 'Platform',
+    fields: () => [
+      ...rectFields,
+      num('top', 'Top height (m)'),
+      { key: 'under', label: 'Underneath', kind: 'select', optional: true, default: 'solid', options: [['solid', 'solid block'], ['open', 'open: walk underneath (top ≥ 2.3 m)']] },
+      ...['north', 'east', 'south', 'west'].map((sd) => ({ key: 'railings', value: sd, label: `Railing on ${sd} edge`, kind: 'listcheck' })),
+    ],
+    info: (o) => {
+      const room = M.roomAt(data, o.x + o.w / 2, o.z + o.d / 2);
+      return `${r3(o.top - (room?.floor ?? 0))} m above the floor. Railings automatically leave a gap where stairs, a ramp or a ladder arrive.`;
+    },
+  },
+  ladders: {
+    title: () => 'Ladder',
+    fields: () => [num('x', 'x (m)'), num('z', 'z (m)'), { key: 'facing', label: 'Climber faces', kind: 'select', options: FACINGS }, num('top', 'Top height (m)'), opt('bottom', 'Bottom height (m)', 'floor'), opt('w', 'Width (m)', '0.8')],
+    info: () => 'Walk into the ladder to climb; walk off the top edge facing away to climb down; jump to let go. The top should lead onto a platform or higher floor.',
+  },
+  water: {
+    title: () => 'Water',
+    fields: () => [...rectFields, num('depth', 'Depth (m)')],
+    info: (o) => (o.depth > 1.4 ? `Deep: you swim (Space up, C to dive) and climb out at the edge.` : 'Shallow: you wade through it, a little slower.'),
+  },
+  triggers: {
+    title: (o) => (o.type === 'plate' ? `Floor plate "${o.name}"` : `Lever "${o.name}"`),
+    fields: () => [{ key: 'name', label: 'Name', kind: 'text' }, { key: 'type', label: 'Type', kind: 'select', options: [['lever', 'lever (pull with E / Use)'], ['plate', 'floor plate (step on it)']] }, num('x', 'x (m)'), num('z', 'z (m)')],
+    info: (o) => {
+      const doors = data.doors.filter((d) => d.trigger === o.name);
+      return doors.length
+        ? `Opens: ${doors.map((d) => `the door between Rooms ${d.between[0]} and ${d.between[1]}`).join(', ')}.`
+        : 'Not connected yet: select a door and pick this name under "Opened by lever/plate".';
+    },
   },
   pillars: {
     title: () => 'Pillar grid',
@@ -944,6 +1201,7 @@ function setPath(o, path, value) {
   const target = keys.reduce((v, k) => (v[k] ??= {}), o);
   if (value === undefined) delete target[last];
   else target[last] = value;
+  if (keys.length && value === undefined && Object.keys(target).length === 0) delete o[keys[0]];
 }
 
 function fieldRow(f, obj, onChange) {
@@ -957,8 +1215,14 @@ function fieldRow(f, obj, onChange) {
   let input;
   if (f.kind === 'select') {
     input = document.createElement('select');
-    for (const o of f.options) input.add(new Option(o, o));
-    input.value = getPath(obj, f.key) ?? f.options[0];
+    const opts = typeof f.options === 'function' ? f.options() : f.options;
+    for (const o of opts) input.add(Array.isArray(o) ? new Option(o[1], o[0]) : new Option(o, o));
+    const first = Array.isArray(opts[0]) ? opts[0][0] : opts[0];
+    input.value = getPath(obj, f.key) ?? f.default ?? first;
+  } else if (f.kind === 'check' || f.kind === 'listcheck') {
+    input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = f.kind === 'check' ? !!getPath(obj, f.key) : (getPath(obj, f.key) || []).includes(f.value);
   } else {
     input = document.createElement('input');
     input.type = f.kind === 'text' ? 'text' : f.kind === 'color' ? 'color' : 'number';
@@ -969,9 +1233,19 @@ function fieldRow(f, obj, onChange) {
     if (f.kind === 'color' && !v) input.value = '#e8e2d4';
     if (f.placeholder) input.placeholder = typeof f.placeholder === 'function' ? f.placeholder() : f.placeholder;
   }
-  input.id = id;
+  input.id = f.kind === 'listcheck' ? `${id}-${f.value}` : id;
+  lab.htmlFor = input.id;
   input.addEventListener('change', () => {
+    if (f.kind === 'check') return onChange(f, input.checked || undefined);
+    if (f.kind === 'listcheck') {
+      const list = new Set(getPath(obj, f.key) || []);
+      if (input.checked) list.add(f.value);
+      else list.delete(f.value);
+      return onChange(f, ['north', 'east', 'south', 'west'].filter((x) => list.has(x)));
+    }
     let v = input.value;
+    if (f.kind === 'select' && v === '' && f.optional) return onChange(f, undefined);
+    if (f.kind === 'select' && f.default !== undefined && v === f.default && f.optional) return onChange(f, undefined);
     if (f.kind === 'num' || f.kind === 'int') {
       if (v === '' && f.optional) v = undefined;
       else {
@@ -1010,6 +1284,13 @@ function refreshPanel() {
             setHint(err, true);
             return refreshPanel();
           }
+        } else if (selection.type === 'triggers' && field.key === 'name') {
+          if (!v || data.triggers.some((t) => t !== o && t.name === v)) {
+            setHint(v ? `A lever or plate called "${v}" already exists.` : 'A lever or plate needs a name.', true);
+            return refreshPanel();
+          }
+          for (const d of data.doors) if (d.trigger === o.name) d.trigger = v;
+          o.name = v;
         } else if (selection.type === 'items' && field.key === 'id' && data.items.some((it) => it !== o && it.id === v)) {
           setHint(`Item spot ${v} already exists.`, true);
           return refreshPanel();
@@ -1028,6 +1309,14 @@ function refreshPanel() {
   actions.className = 'actions';
   const roomId = previewRoomId();
   if (roomId) actions.appendChild(button(`▶ Preview from Room ${roomId}`, () => preview(roomId), 'go'));
+  if (selection.type === 'rooms')
+    actions.appendChild(
+      button('⟳ Rotate 90°', () => {
+        M.rotateRoom90(data, o);
+        commit();
+        setHint('Rotated a quarter-turn clockwise, with everything inside it. Check its doorways still line up.');
+      })
+    );
   if (selection.type !== 'spawn' && selection.type !== 'respawn') actions.appendChild(button('Delete', deleteSelection, 'danger'));
   actions.appendChild(button('Deselect', () => select(null)));
   box.appendChild(actions);
