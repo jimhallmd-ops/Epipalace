@@ -89,6 +89,63 @@ try {
   p = await P();
   check(p.room === 9 && Math.abs(p.y - 1.8) < 0.01, `walking up the stairs reaches Room 9 at 1.8 m (room ${p.room}, y ${p.y.toFixed(2)})`);
 
+  // ---- Doors, courtyard, ladder, water, secret door ----
+  const promptText = () => page.textContent('.prompt');
+  await place(-16.5, 16.3, Math.PI); // Left Wing, facing the swing door to the Courtyard
+  await page.waitForTimeout(300);
+  check((await promptText()).includes('Open door'), `standing at a closed door shows "E Open door" (${await promptText()})`);
+  await page.screenshot({ path: `${OUT}/09-door-closed.png` });
+  await hold('KeyW', 800);
+  check((await P()).z < 18, 'a closed door blocks the way');
+  await page.keyboard.press('KeyE');
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: `${OUT}/09b-door-open.png` });
+  await hold('KeyW', 1200);
+  check((await P()).room === 10, 'pressing E opens the door, and you can walk into the Courtyard');
+
+  await place(-23, 29, Math.PI * 0.75); // courtyard corner looking north-east over the pool
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${OUT}/10-courtyard.png` });
+
+  await place(-15, 21, -Math.PI / 2); // facing the ladder
+  await hold('KeyW', 2500);
+  p = await P();
+  check(Math.abs(p.y - 1.5) < 0.01, `walking into the ladder climbs it onto the lookout (y ${p.y.toFixed(2)})`);
+  await page.evaluate(() => { const pl = window.__epipalace.game.player; pl.yaw = Math.PI * 0.85; pl.pitch = -0.25; });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/11-from-lookout.png` });
+
+  await place(-17.5, 24, Math.PI / 2); // above the pool
+  await page.waitForTimeout(2500);
+  p = await P();
+  check(p.y < -1 && p.y > -2, `falling into the pool you float at the surface (y ${p.y.toFixed(2)})`);
+  await page.keyboard.down('KeyC');
+  await page.waitForTimeout(700);
+  check(await page.isVisible('.underwater.on'), 'holding C dives under water (blue tint)');
+  await page.screenshot({ path: `${OUT}/12-underwater.png` });
+  await page.keyboard.up('KeyC');
+
+  await place(31, 15.5, Math.PI); // Upper Gallery, facing the lever
+  await page.waitForTimeout(300);
+  check((await promptText()).includes('Pull lever'), 'standing at the lever shows "E Pull lever"');
+  await page.keyboard.press('KeyE');
+  await page.waitForTimeout(300);
+  check((await page.textContent('.toast')).includes('hidden door'), 'pulling the lever says a hidden door opened');
+  await page.waitForTimeout(1800);
+  await place(32.5, 13, -Math.PI / 2);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/13-secret-door-open.png` });
+  await hold('KeyW', 1200);
+  check((await P()).room === 11, 'the secret door opened: you can walk into the Secret Study');
+
+  await place(14, 15, -Math.PI * 0.6); // Right Wing, looking at the balcony
+  await page.evaluate(() => (window.__epipalace.game.player.pitch = 0.1));
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/14-balcony.png` });
+  await place(-5, -16.5, 1.35);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/15-diagonal-wall.png` });
+
   // Look at the curved wall and the pillars
   await place(-5, -12, Math.PI / 2);
   await page.waitForTimeout(300);
@@ -161,6 +218,7 @@ try {
   await page.screenshot({ path: `${OUT}/08-map-full.png` });
   await page.keyboard.press('KeyM');
 
+  // Phone gets a Use button when standing at a door
   check(errors.length === 0, `no errors in the browser console${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await page.close();
 

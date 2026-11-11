@@ -111,10 +111,44 @@ export function createMap(root, level) {
       g.stroke();
     }
 
+    // Water
+    for (const w of level.water) {
+      g.fillStyle = 'rgba(79,163,217,0.85)';
+      g.fillRect(X(w.x), Z(w.z), w.w * s, w.d * s);
+    }
+    // Platforms
+    for (const pf of level.platforms) {
+      g.fillStyle = 'rgba(255,255,255,0.6)';
+      g.fillRect(X(pf.x), Z(pf.z), pf.w * s, pf.d * s);
+      g.strokeStyle = 'rgba(27,38,59,0.5)';
+      g.lineWidth = 1;
+      g.strokeRect(X(pf.x), Z(pf.z), pf.w * s, pf.d * s);
+    }
+    // Railings (thin) and ladders (brown)
+    g.strokeStyle = '#5b6470';
+    g.lineWidth = Math.max(1, s * 0.12);
+    g.beginPath();
+    for (const r of level.railings) {
+      g.moveTo(X(r.x1), Z(r.z1));
+      g.lineTo(X(r.x2), Z(r.z2));
+    }
+    g.stroke();
+    for (const l of level.ladders) {
+      g.fillStyle = '#a0743f';
+      g.fillRect(X(l.zone.x0), Z(l.zone.z0), (l.zone.x1 - l.zone.x0) * s, (l.zone.z1 - l.zone.z0) * s);
+    }
+    // Triggers
+    for (const tr of level.triggers) {
+      g.fillStyle = tr.type === 'plate' ? '#c9bc9c' : '#c0392b';
+      g.beginPath();
+      g.arc(X(tr.x), Z(tr.z), Math.max(3, s * 0.35), 0, Math.PI * 2);
+      g.fill();
+    }
+
     // Walls, curved-wall posts and pillars (from collision boxes)
     g.fillStyle = '#1b263b';
     for (const bx of level.boxes) {
-      if (bx.kind !== 'wall' && bx.kind !== 'curve' && bx.kind !== 'pillar') continue;
+      if (!['wall', 'curve', 'pillar', 'diag', 'sill', 'lintel'].includes(bx.kind) || bx.max[1] - bx.min[1] < 1) continue;
       g.fillRect(X(bx.min[0]), Z(bx.min[2]), (bx.max[0] - bx.min[0]) * s, (bx.max[2] - bx.min[2]) * s);
     }
 

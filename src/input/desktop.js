@@ -6,6 +6,7 @@ const MOUSE_SENSITIVITY = 0.0022; // radians per pixel
 
 export function createDesktopInput(canvas) {
   const keys = new Set();
+  let usePressed = false; // E is acted on once per press, not while held
   let lookX = 0;
   let lookY = 0;
   let dragging = false;
@@ -16,6 +17,7 @@ export function createDesktopInput(canvas) {
 
   window.addEventListener('keydown', (e) => {
     keys.add(e.code);
+    if (e.code === 'KeyE' && !e.repeat) usePressed = true;
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => keys.delete(e.code));
@@ -74,10 +76,13 @@ export function createDesktopInput(canvas) {
         strafe: (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0),
         run: k('ShiftLeft', 'ShiftRight'),
         jump: k('Space'),
+        down: k('KeyC'),
+        use: usePressed,
         lookX: lookX * MOUSE_SENSITIVITY,
         lookY: lookY * MOUSE_SENSITIVITY,
       };
       lookX = lookY = 0;
+      usePressed = false;
       return out;
     },
   };

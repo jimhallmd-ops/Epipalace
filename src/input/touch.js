@@ -27,6 +27,8 @@ export function createTouchInput(root, { onMap } = {}) {
     <div class="stick-base"><div class="stick-knob"></div></div>
     <button class="touch-btn btn-jump" type="button">Jump</button>
     <button class="touch-btn btn-map" type="button">Map</button>
+    <button class="touch-btn btn-use" type="button">Use</button>
+    <button class="touch-btn btn-dive" type="button">Dive</button>
   `;
   root.appendChild(ui);
 
@@ -34,6 +36,19 @@ export function createTouchInput(root, { onMap } = {}) {
   const knob = ui.querySelector('.stick-knob');
   const jumpBtn = ui.querySelector('.btn-jump');
   const mapBtn = ui.querySelector('.btn-map');
+  const useBtn = ui.querySelector('.btn-use');
+  const diveBtn = ui.querySelector('.btn-dive');
+  let usePressed = false;
+  let dive = false;
+  useBtn.addEventListener('pointerdown', (e) => {
+    usePressed = true;
+    e.preventDefault();
+  });
+  diveBtn.addEventListener('pointerdown', (e) => {
+    dive = true;
+    e.preventDefault();
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) diveBtn.addEventListener(ev, () => (dive = false));
 
   let move = null; // { id, ox, oy, dx, dy }
   const looks = new Map(); // pointerId -> {x, y}
@@ -106,6 +121,11 @@ export function createTouchInput(root, { onMap } = {}) {
   ui.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
   return {
+    /** Shows the Use button only when there is something to use, and Dive only in water. */
+    setContext({ canUse, inWater }) {
+      useBtn.classList.toggle('on', !!canUse);
+      diveBtn.classList.toggle('on', !!inWater);
+    },
     sample() {
       const fx = move ? move.dx / STICK_RADIUS : 0;
       const fy = move ? -move.dy / STICK_RADIUS : 0;
@@ -114,10 +134,13 @@ export function createTouchInput(root, { onMap } = {}) {
         strafe: Math.abs(fx) < 0.15 ? 0 : fx,
         run: move ? Math.hypot(fx, fy) > 0.95 : false,
         jump,
+        down: dive,
+        use: usePressed,
         lookX: lookX * LOOK_SENSITIVITY,
         lookY: lookY * LOOK_SENSITIVITY,
       };
       lookX = lookY = 0;
+      usePressed = false;
       return out;
     },
   };

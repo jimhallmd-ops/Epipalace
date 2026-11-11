@@ -9,7 +9,7 @@
 // A box is { min: [x, y, z], max: [x, y, z], kind, room }, where y is height above the ground.
 // Kinds drawn as plain boxes:
 //   'floor' | 'ceiling' | 'wall' | 'lintel' (wall above a door/opening) | 'sill' (under one)
-//   'pit-wall' | 'pit-floor' (chasms) | 'pool-wall' | 'pool-floor' (water) | 'item' | 'stair' | 'platform'
+//   'pit-wall' | 'pit-floor' (chasms) | 'pool-wall' | 'pool-floor' (water) | 'item' | 'stair' | 'platform' | 'lever' (post)
 // Collision-only kinds (drawn from the lists instead, or invisible):
 //   'ramp-step' (small steps under a smooth ramp) | 'curve' / 'diag' (posts along curved and
 //   diagonal walls) | 'pillar' | 'railing' | 'barrier' (invisible edge of an open-air side)
@@ -223,7 +223,8 @@ export function buildLevel(data) {
           emit(pc.p, pc.q, pc.bandBottom, pc.bandBottom + 8, 'barrier'); // you can't walk off the palace
         }
       } else if (pc.door) {
-        emit(pc.p, pc.q, pc.door.floor + pc.door.height, pc.top, 'lintel');
+        // Above a secret door the wall must look exactly like the rest of the wall.
+        emit(pc.p, pc.q, pc.door.floor + pc.door.height, pc.top, pc.door.leaf === 'secret' ? 'wall' : 'lintel');
         emit(pc.p, pc.q, pc.bottom, pc.door.floor, 'sill');
       } else {
         // East-west walls are stretched by half a wall thickness at each end so corners are
@@ -422,7 +423,7 @@ export function buildLevel(data) {
     const room = roomAt(tr.x, tr.z);
     return { ...tr, type: tr.type ?? 'lever', y: room.floor, room: room.id };
   });
-  for (const tr of triggers) if (tr.type === 'lever') box(tr.x - 0.15, tr.y, tr.z - 0.15, tr.x + 0.15, tr.y + 0.9, tr.z + 0.15, 'item', tr.room);
+  for (const tr of triggers) if (tr.type === 'lever') box(tr.x - 0.15, tr.y, tr.z - 0.15, tr.x + 0.15, tr.y + 0.9, tr.z + 0.15, 'lever', tr.room);
 
   // ---- Item pedestals ----
   const items = (data.items || []).map((it) => {

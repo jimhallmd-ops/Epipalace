@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { floorTexture, wallTexture, labelTexture } from './textures.js';
 import { PLAYER } from '../core/physics.js';
-import { compassPoint } from '../level/geometry.js';
+import { compassPoint, subtractRect } from '../level/geometry.js';
+import { RAILING_HEIGHT } from '../level/build.js';
 
 // Proportions review: a 72° vertical view made rooms look stretched and huge. 60° vertical
 // (about 90° horizontal on a widescreen) looks natural. On tall phone screens we widen the
@@ -192,6 +193,16 @@ export function createScene(container, level) {
     ramp: new THREE.MeshLambertMaterial({ color: '#ddd3bd', map: floorTex, side: THREE.DoubleSide }),
     pillar: new THREE.MeshLambertMaterial({ color: '#efe9dc' }),
     curve: new THREE.MeshLambertMaterial({ color: '#f4f1ea', map: wallTex, side: THREE.DoubleSide }),
+    platform: new THREE.MeshLambertMaterial({ color: '#e2d9c6', map: floorTex }),
+    'pool-wall': new THREE.MeshLambertMaterial({ color: '#bfe3ef', map: floorTex }),
+    'pool-floor': new THREE.MeshLambertMaterial({ color: '#a9d7e8', map: floorTex }),
+    lever: new THREE.MeshLambertMaterial({ color: '#4a5260' }),
+    metal: new THREE.MeshLambertMaterial({ color: '#5b6470' }),
+    wood: new THREE.MeshLambertMaterial({ color: '#a0743f' }),
+    door: new THREE.MeshLambertMaterial({ color: '#8a5a35' }),
+    plate: new THREE.MeshLambertMaterial({ color: '#c9bc9c' }),
+    ground: new THREE.MeshLambertMaterial({ color: '#c9dcb8' }),
+    water: new THREE.MeshLambertMaterial({ color: '#4fa3d9', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
   };
   const floorMats = new Map(); // one per room colour
   const floorMat = (room) => {
@@ -204,7 +215,8 @@ export function createScene(container, level) {
   // ---- Solid geometry, merged by material (few draw calls = smooth on phones) ----
   const groups = new Map();
   // Ramp steps, curve posts and pillars are collision-only boxes; they are drawn smoothly below.
-  const drawnSeparately = new Set(['ramp-step', 'curve', 'pillar']);
+  // Railings, diagonal-wall posts and the invisible barriers of open sides are not drawn as boxes either.
+  const drawnSeparately = new Set(['ramp-step', 'curve', 'pillar', 'railing', 'diag', 'barrier']);
   for (const b of level.boxes) {
     if (drawnSeparately.has(b.kind)) continue;
     const mat = b.kind === 'floor' ? floorMat(roomById.get(b.room)) : mats[b.kind];
@@ -235,9 +247,182 @@ export function createScene(container, level) {
     scene.add(new THREE.Mesh(mergeGeometries(geos), mats.pillar));
   }
 
-  // ---- Glowing ceiling panels (look like lights) ----
+  // ---- Sky (only visible where a room is open to the sky or has open sides) ----
+  const sky = (() => {
+    const g = new THREE.SphereGeometry(150, 32, 16);
+    const pos = g.attributes.position;
+    const cols = [];
+    const top = new THREE.Color('#7fb8e8');
+    const horizon = new THREE.Color('#e3eff7');
+    const below = new THREE.Color('#c9dcb8');
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i) / 150;
+      const c = y >= 0 ? horizon.clone().lerp(top, Math.pow(y, 0.6)) : horizon.clone().lerp(below, Math.min(1, -y * 6));
+      cols.push(c.r, c.g, c.b);
+    }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, depthWrite: false, fog: false }));
+    m.renderOrder = -1;
+    scene.add(m);
+    return m;
+  })();
+
+  // ---- Lawn all round the palace, just below the lowest floor (with holes over chasms and pools) ----
+  {
+    const y = level.minFloor - level.settings.floorThickness - 0.02;
+    const b = level.bounds;
+    let pieces = [{ x: b.minX - 300, z: b.minZ - 300, w: b.maxX - b.minX + 600, d: b.maxZ - b.minZ + 600 }];
+    for (const h of [...level.chasms, ...level.water]) pieces = pieces.flatMap((p) => subtractRect(p, { x: h.x - 0.3, z: h.z - 0.3, w: h.w + 0.6, d: h.d + 0.6 }));
+    const geos = pieces.map((p) => {
+      const g = new THREE.PlaneGeometry(p.w, p.d);
+      g.rotateX(-Math.PI / 2);
+      g.translate(p.x + p.w / 2, y, p.z + p.d / 2);
+      return g;
+    });
+    scene.add(new THREE.Mesh(mergeGeometries(geos), mats.ground));
+  }
+
+  // ---- Railings: posts every ~1.2 m with a top rail and a middle rail ----
+  if (level.railings.length) {
+    const geos = [];
+    for (const r of level.railings) {
+      const len = Math.hypot(r.x2 - r.x1, r.z2 - r.z1);
+      const ang = -Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
+      const n = Math.max(1, Math.ceil(len / 1.2));
+      for (let i = 0; i <= n; i++) {
+        const g = new THREE.BoxGeometry(0.06, RAILING_HEIGHT, 0.06);
+        g.translate(r.x1 + ((r.x2 - r.x1) * i) / n, r.y + RAILING_HEIGHT / 2, r.z1 + ((r.z2 - r.z1) * i) / n);
+        geos.push(g);
+      }
+      for (const [hgt, thick] of [
+        [RAILING_HEIGHT - 0.03, 0.07],
+        [RAILING_HEIGHT * 0.5, 0.035],
+      ]) {
+        const g = new THREE.BoxGeometry(len, thick, thick);
+        g.rotateY(ang);
+        g.translate((r.x1 + r.x2) / 2, r.y + hgt, (r.z1 + r.z2) / 2);
+        geos.push(g);
+      }
+    }
+    scene.add(new THREE.Mesh(mergeGeometries(geos), mats.metal));
+  }
+
+  // ---- Diagonal walls: rotated boxes ----
+  for (const w of level.diagonals) {
+    const len = Math.hypot(w.x2 - w.x1, w.z2 - w.z1) + w.thickness;
+    const g = new THREE.BoxGeometry(len, w.y1 - w.y0, w.thickness);
+    g.rotateY(-Math.atan2(w.z2 - w.z1, w.x2 - w.x1));
+    g.translate((w.x1 + w.x2) / 2, (w.y0 + w.y1) / 2, (w.z1 + w.z2) / 2);
+    scene.add(new THREE.Mesh(g, mats.curve));
+  }
+
+  // ---- Ladders: two rails and rungs every 30 cm ----
+  for (const l of level.ladders) {
+    const h = l.top - l.bottom + 1.0; // the rails stick up 1 m above the top, as a handhold
+    const along = l.fx === 0 ? [1, 0] : [0, 1];
+    const cx = l.x - l.fx * 0.06;
+    const cz = l.z - l.fz * 0.06;
+    const geos = [];
+    for (const sgn of [-1, 1]) {
+      const g = new THREE.BoxGeometry(0.06, h, 0.06);
+      g.translate(cx + along[0] * sgn * (l.w / 2), l.bottom + h / 2, cz + along[1] * sgn * (l.w / 2));
+      geos.push(g);
+    }
+    for (let y = l.bottom + 0.3; y < l.top + 0.95; y += 0.3) {
+      const g = new THREE.BoxGeometry(along[0] ? l.w : 0.04, 0.04, along[1] ? l.w : 0.04);
+      g.translate(cx, y, cz);
+      geos.push(g);
+    }
+    scene.add(new THREE.Mesh(mergeGeometries(geos), mats.wood));
+  }
+
+  // ---- Water surfaces ----
+  for (const w of level.water) {
+    const g = new THREE.PlaneGeometry(w.w, w.d);
+    g.rotateX(-Math.PI / 2);
+    g.translate(w.x + w.w / 2, w.surface, w.z + w.d / 2);
+    const m = new THREE.Mesh(g, mats.water);
+    m.renderOrder = 2;
+    scene.add(m);
+  }
+
+  // ---- Doors that open and close (swing, slide) and secret doors (slide down into the floor) ----
+  const doorMeshes = new Map(); // door index -> { group, def }
+  for (const d of level.doors) {
+    if (d.leaf === 'none') continue;
+    const group = new THREE.Group();
+    if (d.leaf === 'secret') {
+      // Same wall texture and thickness as the wall around it: invisible until it opens.
+      group.add(new THREE.Mesh(worldBoxGeometry(d.leafBox), mats.wall));
+    } else {
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(d.orient === 'h' ? d.width : 0.07, d.height, d.orient === 'h' ? 0.07 : d.width), mats.door);
+      const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), mats.metal);
+      if (d.orient === 'h') {
+        group.position.set(d.from, d.floor, d.line); // hinge at the "from" end
+        leaf.position.set(d.width / 2, d.height / 2, 0);
+        knob.position.set(d.width - 0.12, 1.0, 0);
+        knob.scale.set(1, 1, 2.4);
+      } else {
+        group.position.set(d.line, d.floor, d.from);
+        leaf.position.set(0, d.height / 2, d.width / 2);
+        knob.position.set(0, 1.0, d.width - 0.12);
+        knob.scale.set(2.4, 1, 1);
+      }
+      group.add(leaf, knob);
+    }
+    scene.add(group);
+    doorMeshes.set(d.index, { group, def: d, base: group.position.clone() });
+  }
+  function animateDoors(doorStates) {
+    for (const ds of doorStates || []) {
+      const dm = doorMeshes.get(ds.def.index);
+      if (!dm) continue;
+      const k = ds.t * ds.t * (3 - 2 * ds.t); // ease in/out
+      const d = dm.def;
+      if (d.leaf === 'swing') dm.group.rotation.y = (d.orient === 'h' ? -1 : 1) * k * Math.PI * 0.5;
+      else if (d.leaf === 'slide') {
+        dm.group.position.copy(dm.base);
+        if (d.orient === 'h') dm.group.position.x += k * (d.width - 0.1);
+        else dm.group.position.z += k * (d.width - 0.1);
+      } else if (d.leaf === 'secret') dm.group.position.y = -k * (d.height + 0.05);
+    }
+  }
+
+  // ---- Triggers: levers on a post, and floor plates ----
+  const leverHandles = new Map();
+  for (const tr of level.triggers) {
+    if (tr.type === 'plate') {
+      const g = new THREE.BoxGeometry(1.0, 0.03, 1.0);
+      g.translate(tr.x, tr.y + 0.015, tr.z);
+      const m = new THREE.Mesh(g, mats.plate);
+      scene.add(m);
+      leverHandles.set(tr.name, { mesh: m, type: 'plate' });
+    } else {
+      const pivot = new THREE.Group();
+      pivot.position.set(tr.x, tr.y + 0.9, tr.z);
+      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8), mats.metal);
+      handle.position.y = 0.25;
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 8), new THREE.MeshLambertMaterial({ color: '#c0392b' }));
+      ball.position.y = 0.5;
+      pivot.add(handle, ball);
+      pivot.rotation.z = 0.6;
+      scene.add(pivot);
+      leverHandles.set(tr.name, { mesh: pivot, type: 'lever' });
+    }
+  }
+  function animateTriggers(triggerStates) {
+    for (const ts of triggerStates || []) {
+      const h = leverHandles.get(ts.def.name);
+      if (!h) continue;
+      if (h.type === 'lever') h.mesh.rotation.z += ((ts.fired ? -0.6 : 0.6) - h.mesh.rotation.z) * 0.2;
+      else h.mesh.position.y = ts.fired ? -0.02 : 0;
+    }
+  }
+
+  // ---- Glowing ceiling panels (look like lights), except in rooms open to the sky ----
   const panelMat = new THREE.MeshBasicMaterial({ color: '#fffdf2' });
   for (const r of level.rooms) {
+    if (r.sky) continue;
     const pw = Math.min(r.w * 0.5, 4);
     const pd = Math.min(r.d * 0.5, 4);
     const panel = new THREE.Mesh(new THREE.PlaneGeometry(pw, pd), panelMat);
@@ -289,12 +474,25 @@ export function createScene(container, level) {
 
   // ---- Room numbers painted on the floor ----
   for (const r of level.rooms) {
+    // Paint the number on open floor: the spot nearest the centre that is clear of
+    // chasms, pools, stairs, platforms and pillars.
+    const covered = (x, z) =>
+      [...level.chasms, ...level.water, ...level.stairs, ...level.ramps, ...level.platforms].some((h) => x > h.x - 1 && x < h.x + h.w + 1 && z > h.z - 1 && z < h.z + h.d + 1) ||
+      level.pillars.some((p) => Math.abs(p.x - x) < 1.2 && Math.abs(p.z - z) < 1.2);
     let cx = r.x + r.w / 2;
     let cz = r.z + r.d / 2;
-    const chasm = level.chasms.find((c) => cx > c.x - 1 && cx < c.x + c.w + 1 && cz > c.z - 1 && cz < c.z + c.d + 1);
-    if (chasm) {
-      cx = chasm.respawn.x;
-      cz = chasm.respawn.z + 1.5;
+    if (covered(cx, cz)) {
+      let best = null;
+      for (let x = r.x + 1.5; x <= r.x + r.w - 1.5; x += 0.5) {
+        for (let z = r.z + 1.5; z <= r.z + r.d - 1.5; z += 0.5) {
+          const dist = Math.hypot(x - cx, z - cz);
+          if (!covered(x, z) && (!best || dist < best.dist)) best = { x, z, dist };
+        }
+      }
+      if (best) {
+        cx = best.x;
+        cz = best.z;
+      }
     }
     const size = Math.min(r.w, r.d, 5) * 0.7;
     const mat = new THREE.MeshBasicMaterial({
@@ -311,6 +509,7 @@ export function createScene(container, level) {
   // ---- Signs above every door: "Room N" of the room you are about to enter ----
   const t = level.settings.wallThickness;
   for (const d of level.doors) {
+    if (d.leaf === 'secret') continue; // a sign would give the secret away
     const y = d.floor + d.height + 0.35;
     const sides = [
       // [room the sign is in, room number shown, offset from wall line, rotation]
@@ -350,16 +549,21 @@ export function createScene(container, level) {
   // The eye height glides over stair steps instead of jumping 18 cm at a time.
   let eyeY = null;
   let lastT = performance.now();
-  function render(player) {
+  const underwaterFog = new THREE.Fog('#2f7fb0', 0.5, 14);
+  function render(player, state = {}) {
+    animateDoors(state.doors);
+    animateTriggers(state.triggers);
+    scene.fog = state.underwater ? underwaterFog : null;
     const now = performance.now();
     const dt = Math.min((now - lastT) / 1000, 0.1);
     lastT = now;
     const target = player.y + PLAYER.eyeHeight;
-    if (eyeY === null || Math.abs(target - eyeY) > 0.6 || !player.grounded) eyeY = target;
+    if (eyeY === null || Math.abs(target - eyeY) > 0.6 || !player.grounded || player.climbing || player.swimming) eyeY = target;
     else eyeY += (target - eyeY) * Math.min(1, dt * 14);
     camera.position.set(player.x, eyeY, player.z);
     camera.rotation.y = player.yaw;
     camera.rotation.x = player.pitch;
+    sky.position.copy(camera.position);
     renderer.render(scene, camera);
   }
 
