@@ -143,7 +143,8 @@ describe('doors between different floor heights', () => {
 
   it('rejects a door that would be taller than a room', () => {
     const data = structuredClone(palace);
-    data.rooms.find((r) => r.id === 4).height = 3.5; // door top is 1.8 + 2.4 = 4.2
+    data.rooms.find((r) => r.id === 11).height = 3; // ceiling at 4.8
+    data.doors.find((d) => d.between.includes(11)).height = 3.3; // door top at 5.1
     expect(validateLevel(data).some((e) => e.includes('too tall'))).toBe(true);
   });
 

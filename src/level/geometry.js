@@ -122,3 +122,12 @@ export function sliceRect(r, dir, n, i) {
 export function runLength(r, dir) {
   return dir === 'north' || dir === 'south' ? r.d : r.w;
 }
+
+/** Unit step for each compass direction, as [dx, dz]. */
+export const DIR_VEC = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] };
+
+/** Which side of `room` (north/south/east/west) a shared edge is on. */
+export function edgeSideOf(room, edge) {
+  if (edge.orient === 'h') return Math.abs(edge.line - room.z) < 1e-4 ? 'north' : 'south';
+  return Math.abs(edge.line - room.x) < 1e-4 ? 'west' : 'east';
+}

@@ -2,7 +2,7 @@
 // An empty list means the level is fine. The game refuses to start (and the
 // Netlify deploy fails its tests) if any problem is found.
 
-import { rectsOverlap, rectInside, rectContains, sharedEdge, EPS, DIRECTIONS, runLength, compassPoint, arcSweep } from './geometry.js';
+import { rectsOverlap, rectInside, rectContains, sharedEdge, EPS, DIRECTIONS, runLength, compassPoint, arcSweep, edgeSideOf } from './geometry.js';
 
 // Recommended proportions (see PROJECT.md, "Proportions"). A level file can override any of them.
 export const DEFAULTS = {
@@ -42,6 +42,13 @@ export function validateLevel(data) {
   }
   if (errors.length) return errors;
 
+  const SIDE_MODES = ['wall', 'open', 'railing'];
+  for (const r of data.rooms) {
+    for (const [side, mode] of Object.entries(r.sides || {})) {
+      if (!DIRECTIONS.includes(side)) errors.push(`Room ${r.id}: unknown side "${side}" (use north, east, south or west).`);
+      else if (!SIDE_MODES.includes(mode)) errors.push(`Room ${r.id}: the ${side} side must be "wall", "open" or "railing".`);
+    }
+  }
   const rooms = [...byId.values()];
   for (let i = 0; i < rooms.length; i++) {
     for (let j = i + 1; j < rooms.length; j++) {
@@ -62,6 +69,15 @@ export function validateLevel(data) {
       errors.push(`${label}: Room ${a.id} and Room ${b.id} do not touch, so there is no wall to put a door in.`);
       continue;
     }
+    for (const r of [a, b]) {
+      const mode = r.sides?.[edgeSideOf(r, edge)];
+      if (mode === 'open' || mode === 'railing') errors.push(`${label}: Room ${r.id}'s side there is ${mode}, so there is no wall to put a door in.`);
+    }
+    if (door.leaf && !['none', 'swing', 'slide', 'secret'].includes(door.leaf)) errors.push(`${label}: "leaf" must be none, swing, slide or secret.`);
+    if (door.opens && !['use', 'auto'].includes(door.opens)) errors.push(`${label}: "opens" must be use or auto.`);
+    const triggerNames = new Set((data.triggers || []).map((tr) => tr.name));
+    if (door.trigger && !triggerNames.has(door.trigger)) errors.push(`${label}: there is no trigger called "${door.trigger}".`);
+    if (door.leaf === 'secret' && !door.trigger) errors.push(`${label}: a secret door needs a trigger (a lever or plate), or it could never open.`);
     const doorFloor = Math.max(a.floor ?? 0, b.floor ?? 0);
     const doorTop = doorFloor + (door.height ?? d.doorHeight);
     for (const r of [a, b]) {
@@ -108,9 +124,8 @@ export function validateLevel(data) {
   for (const [n, w] of (data.walls || []).entries()) {
     const label = `Wall ${n + 1}`;
     for (const k of ['x1', 'z1', 'x2', 'z2']) if (!isNum(w[k])) errors.push(`${label}: "${k}" must be a number.`);
-    if (Math.abs(w.x1 - w.x2) > EPS && Math.abs(w.z1 - w.z2) > EPS) {
-      errors.push(`${label}: must run straight east-west or north-south.`);
-    }
+    if (Math.hypot(w.x2 - w.x1, w.z2 - w.z1) < 0.3) errors.push(`${label}: must be at least 0.3 m long.`);
+    if (w.style && !['solid', 'railing'].includes(w.style)) errors.push(`${label}: style must be "solid" or "railing".`);
     if (!roomAt((w.x1 + w.x2) / 2, (w.z1 + w.z2) / 2)) errors.push(`${label}: its middle is not inside any room.`);
   }
 
@@ -191,6 +206,63 @@ export function validateLevel(data) {
     const size = pg.size ?? 0.6;
     if (size < 0.2 || size > 4) errors.push(`${label}: pillar size must be between 0.2 and 4 m.`);
     if (!inOneRoom(pg)) errors.push(`${label}: must lie completely inside one room.`);
+  }
+
+  for (const [n, pf] of (data.platforms || []).entries()) {
+    const label = `Platform ${n + 1}`;
+    const bad = ['x', 'z', 'w', 'd', 'top'].filter((k) => !isNum(pf[k]));
+    if (bad.length) {
+      errors.push(`${label}: ${bad.join(', ')} must be numbers.`);
+      continue;
+    }
+    const room = inOneRoom(pf);
+    if (!room) {
+      errors.push(`${label}: must lie completely inside one room.`);
+      continue;
+    }
+    const floor = room.floor ?? 0;
+    if (pf.top <= floor + 0.05) errors.push(`${label}: its top (${pf.top} m) must be above Room ${room.id}'s floor (${floor} m).`);
+    if (!room.sky && pf.top > floor + (room.height ?? d.height) - 2) errors.push(`${label}: too close to Room ${room.id}'s ceiling to stand on (needs 2 m of head room).`);
+    if (pf.under === 'open' && pf.top - floor < 2.3) errors.push(`${label}: to walk underneath ("under: open") its top must be at least 2.3 m above the floor.`);
+    for (const side of pf.railings || []) if (!DIRECTIONS.includes(side)) errors.push(`${label}: railing side "${side}" must be north, east, south or west.`);
+  }
+
+  for (const [n, l] of (data.ladders || []).entries()) {
+    const label = `Ladder ${n + 1}`;
+    const bad = ['x', 'z', 'top'].filter((k) => !isNum(l[k]));
+    if (bad.length) {
+      errors.push(`${label}: ${bad.join(', ')} must be numbers.`);
+      continue;
+    }
+    if (!DIRECTIONS.includes(l.facing)) {
+      errors.push(`${label}: "facing" must be north, east, south or west (the way you face while climbing).`);
+      continue;
+    }
+    const room = roomAt(l.x, l.z);
+    if (!room) errors.push(`${label}: is not inside any room.`);
+    else if (l.top <= (l.bottom ?? room.floor ?? 0) + 0.3) errors.push(`${label}: its top must be at least 0.3 m above its bottom.`);
+  }
+
+  for (const [n, wt] of (data.water || []).entries()) {
+    const label = `Water ${n + 1}`;
+    const bad = ['x', 'z', 'w', 'd', 'depth'].filter((k) => !isNum(wt[k]));
+    if (bad.length) {
+      errors.push(`${label}: ${bad.join(', ')} must be numbers.`);
+      continue;
+    }
+    if (!inOneRoom(wt)) errors.push(`${label}: must lie completely inside one room.`);
+    if (wt.depth < 0.3 || wt.depth > 20) errors.push(`${label}: depth must be between 0.3 and 20 m.`);
+    for (const c of chasms) if (rectsOverlap(wt, c)) errors.push(`${label}: overlaps a chasm.`);
+  }
+
+  const triggerNames = new Set();
+  for (const [n, tr] of (data.triggers || []).entries()) {
+    const label = `Trigger ${n + 1}${tr.name ? ` ("${tr.name}")` : ''}`;
+    if (!tr.name || typeof tr.name !== 'string') errors.push(`${label}: needs a name, so doors can refer to it.`);
+    else if (triggerNames.has(tr.name)) errors.push(`${label}: the name "${tr.name}" is used twice.`);
+    triggerNames.add(tr.name);
+    if (!['lever', 'plate'].includes(tr.type ?? 'lever')) errors.push(`${label}: type must be "lever" or "plate".`);
+    if (!isNum(tr.x) || !isNum(tr.z) || !roomAt(tr.x, tr.z)) errors.push(`${label}: must be inside a room.`);
   }
 
   const s = data.spawn;
