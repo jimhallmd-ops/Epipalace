@@ -24,8 +24,31 @@ This file is the single source of truth for goals, decisions and progress. Updat
 | 1 | Foundation: level format, hollow rooms, collision + tests, desktop & phone controls, chasm respawn, debug map | **Done** |
 | 1.5 | Map editor at /editor; stairs, ramps, curved walls, pillar grids, different floor heights; proportions review | **Done** |
 | 1.6 | Open air (sky, open sides, railings), platforms, diagonal walls, ladders, water/swimming, real doors, secret doors with levers/plates, rotate rooms 90° | **Done** |
-| 2 | Real layout from the five sketches (entrance, top-left branch, top-right branch, left wing, right wing) | Not started. The owner can now lay it out in the editor; see section 10. |
-| 3+ | Mnemonic objects in the numbered item spots, epidemiology content, polish | Not started |
+| 2 | **Structure**: the whole palace laid out from the five sketches (entrance, both branches, both wings), with an item spot wherever a mnemonic object will go | **In progress: the owner is building it in the editor** (section 10 has the sketch notes) |
+| 3 | **Textures and objects**: room surfaces and a 3D object on every item spot, from open-licence libraries (see "Objects and textures" below) | Next |
+| 4 | **Tasks / games**: a small task or game attached to each mnemonic object | Planned |
+| 5 | **Automatic transport**: jump straight to any location (room or item spot), e.g. from a question or a menu | Planned |
+| 6 | **The website**: epidemiology reading, text and embedded questions that link into the game at the right location | Planned |
+| 7 | **Reuse for other areas of medicine**: the same engine, editor and process, with a different palace and content (see "Reuse" below) | Planned; shapes decisions from now on |
+
+### Objects and textures (decided)
+- Use **open-licence** models and textures. Prefer **CC0** (no conditions): Kenney, Quaternius, Poly Haven,
+  ambientCG, Smithsonian Open Access (CC0 items). **CC-BY** is fine with a credit (some NIH 3D scientific
+  models, Poly Pizza, Sketchfab). **Avoid NC (non-commercial) and ND (no changes)** licences.
+- Keep one main visual style (e.g. one low-poly pack); scientific models (NIH 3D) can be the exception.
+- Every model/texture gets an entry (source, author, licence, link) in a credits list shown in the game.
+- Models are converted to compact glTF/GLB and kept small so phones load quickly.
+- Objects attach to **item spots**, so the layout can keep changing without losing objects.
+
+### Reuse for other areas of medicine
+The goal is a repeatable process, not a one-off: **engine + editor stay the same; each subject is a
+"pack"** of its own palace and content. Decisions that follow from this:
+- Keep **layout** (the palace file) separate from **content** (what each item spot means, its object,
+  its task, its reading text and questions). Content will live in its own file per subject, keyed by
+  item-spot number, never inside the game code.
+- Nothing subject-specific in the engine: no epidemiology words in code, only in a subject's files.
+- Every step of the process is written down here (sketch → editor layout → objects → tasks → transport
+  → website), so it can be repeated for, say, cardiology or pharmacology.
 
 ---
 
